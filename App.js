@@ -26,7 +26,7 @@ import { PrayerTimes, Coordinates, CalculationMethod, Qibla } from 'adhan';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
-import mobileAds, { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import mobileAds, { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -109,7 +109,7 @@ const RELIGIOUS_DAYS = [
   { year: 2027, date: '2027-10-10', name: 'Mevlid Kandili' },
 ];
 
-const BANNER_AD_UNIT_ID = __DEV__ ? TestIds.BANNER : 'ca-app-pub-6300495112628329/1128511738';
+const BANNER_AD_UNIT_ID = 'ca-app-pub-6300495112628329/1128511738';
 
 const NOTIFICATION_PREF_KEY = 'notificationsEnabled';
 
