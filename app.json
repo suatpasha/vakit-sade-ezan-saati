@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vakit",
     "slug": "vakit-sade-ezan-saati",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.suatp.vakitezansaati"
     },
     "android": {
+      "versionCode": 2,  // <-- BU SATIRI EKLEYİN (Tam sayı olmalı, nokta yok)
       "useNextNotificationsApi": true,
       "package": "com.suatp.vakitezansaati",
       "permissions": [
