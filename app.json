@@ -2,22 +2,25 @@
   "expo": {
     "name": "Vakit",
     "slug": "vakit-sade-ezan-saati",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#FAFAFA"
     },
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.suatp.vakitezansaati"
     },
+
     "android": {
-      "versionCode": 2,  // <-- BU SATIRI EKLEYİN (Tam sayı olmalı, nokta yok)
+      "versionCode": 3,
       "useNextNotificationsApi": true,
       "package": "com.suatp.vakitezansaati",
       "permissions": [
@@ -26,18 +29,14 @@
         "FOREGROUND_SERVICE"
       ]
     },
-    "web": {
-      "favicon": "./assets/logo.png"
-    },
+
     "plugins": [
       [
         "expo-notifications",
         {
           "icon": "./assets/logo.png",
           "color": "#10B981",
-          "sounds": [
-            "./assets/sounds/ogle.mp3"
-          ],
+          "sounds": ["./assets/sounds/ogle.mp3"],
           "mode": "production",
           "android": {
             "notificationChannelId": "ezan-channel",
@@ -48,14 +47,10 @@
           }
         }
       ],
-      [
-        "react-native-google-mobile-ads",
-        {
-          "android_app_id": "ca-app-pub-6300495112628329~8677481654"
-        }
-      ],
+
       "expo-location"
     ],
+
     "extra": {
       "eas": {
         "projectId": "87f7aeae-185b-4b61-94df-bb4733892726"

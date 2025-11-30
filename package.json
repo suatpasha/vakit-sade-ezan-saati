@@ -1,6 +1,6 @@
 {
   "name": "vakit-sade-ezan-saati",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -16,6 +16,7 @@
     "expo": "~54.0.25",
     "expo-audio": "~1.0.15",
     "expo-av": "~16.0.7",
+    "expo-build-properties": "~1.0.9",
     "expo-location": "^19.0.7",
     "expo-notifications": "^0.32.13",
     "expo-sensors": "~15.0.7",
@@ -23,7 +24,6 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-google-mobile-ads": "^16.0.0",
     "react-native-web": "^0.21.0"
   },
   "private": true,

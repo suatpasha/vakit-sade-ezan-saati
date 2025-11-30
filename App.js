@@ -26,7 +26,6 @@ import { PrayerTimes, Coordinates, CalculationMethod, Qibla } from 'adhan';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
-import mobileAds, { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -109,8 +108,6 @@ const RELIGIOUS_DAYS = [
   { year: 2027, date: '2027-10-10', name: 'Mevlid Kandili' },
 ];
 
-const BANNER_AD_UNIT_ID = 'ca-app-pub-6300495112628329/1128511738';
-
 const NOTIFICATION_PREF_KEY = 'notificationsEnabled';
 
 // Bildirim Handler
@@ -159,12 +156,6 @@ export default function App() {
   const logoRotateAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const arrowPulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    mobileAds()
-      .initialize()
-      .catch((err) => console.log('MobileAds init error', err));
-  }, []);
 
   const getAngleDiff = (target, current) => {
     if (target === null || current === null || Number.isNaN(target) || Number.isNaN(current)) {
@@ -646,19 +637,9 @@ export default function App() {
             </TouchableOpacity>
           </View>
           <Text style={styles.date}>{formatDate(new Date())}</Text>
-          <View
-            style={styles.hiddenTestButtonWrapper}
-            pointerEvents="none"
-            collapsable={false}
-          >
-            <TouchableOpacity
-              style={styles.testBtn}
-              onPress={triggerTestEzanNotification}
-              accessible={false}
-            >
-              <Text style={styles.testBtnText}>Test Bildirimi Çal</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.testBtn} onPress={triggerTestEzanNotification}>
+            <Text style={styles.testBtnText}>Test Bildirimi Çal</Text>
+          </TouchableOpacity>
           {loading && <ActivityIndicator color="#10B981" style={{ marginTop: 10 }} />}
           {error && <Text style={{ color: 'red', marginTop: 5 }}>{error}</Text>}
         </View>
@@ -866,20 +847,14 @@ export default function App() {
           </View>
         )}
 
-        <View style={styles.bannerWrapper}>
-          <BannerAd
-            unitId={BANNER_AD_UNIT_ID}
-            size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-            requestOptions={{
-              requestNonPersonalizedAdsOnly: true,
-            }}
-            onAdFailedToLoad={(error) => console.log('BannerAd error', error)}
-          />
+        <View style={styles.memorialCard}>
+          <Text style={styles.memorialTitle}>"Zeliha Tiryakioğlu" hayrına yapılmıştır.</Text>
+          <Text style={styles.memorialSubtitle}>Ruhuna bir Fatiha okumanız dileğiyle...</Text>
         </View>
 
       </ScrollView>
       
-      {/* Dini Günler Modal */}
+        {/* Dini Günler Modal */}
       <Modal
         visible={calendarModalVisible}
         transparent={true}
@@ -1037,7 +1012,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: 80,
   },
   header: {
     marginBottom: 30,
@@ -1107,21 +1082,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'flex-start'
   },
-  hiddenTestButtonWrapper: {
-    opacity: 0,
-    height: 0,
-    overflow: 'hidden',
-    alignSelf: 'flex-start',
-    width: '100%',
-  },
   testBtnText: {
     fontSize: 12,
     color: '#333'
-  },
-  bannerWrapper: {
-    marginTop: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   countdownCard: {
     backgroundColor: '#10B981',
@@ -1555,6 +1518,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  memorialCard: {
+    marginTop: 32,
+    borderRadius: 20,
+    padding: 18,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 6,
+  },
+  memorialTitle: {
+    color: '#F9FAFB',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  memorialSubtitle: {
+    marginTop: 6,
+    color: '#A5F3FC',
+    fontSize: 13,
+    textAlign: 'center',
   },
   calendarModal: {
     width: '90%',
