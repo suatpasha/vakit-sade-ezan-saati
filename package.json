@@ -17,6 +17,7 @@
     "expo-audio": "~1.0.15",
     "expo-av": "~16.0.7",
     "expo-build-properties": "~1.0.9",
+    "expo-linear-gradient": "~15.0.7",
     "expo-location": "^19.0.7",
     "expo-notifications": "^0.32.13",
     "expo-sensors": "~15.0.7",

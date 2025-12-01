@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -12,7 +12,6 @@ import {
   Image, 
   Platform,
   LogBox,
-  Dimensions,
   Modal,
   Switch
 } from 'react-native';
@@ -27,11 +26,9 @@ import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Ekran genişliği
-const { width } = Dimensions.get('window');
 
 const PRAYER_NAMES = {
   fajr: 'İmsak',
@@ -50,31 +47,55 @@ const PRAYER_DETAILS = {
     name: 'İmsak',
     rakats: '4 Rekat',
     detail: '2 Sünnet, 2 Farz',
+    shortSurah: 'İhlas Suresi (Kul hüvallahu ehad...)',
+    dua: '“Allah’ım, bu sabahı bize hayırlı ve bereketli kıl.”',
+    quranVerse: '“Namaz, müminlere vakitli olarak farz kılınmıştır.” (Nisa 103)',
+    commentary: 'Günü teslimiyetle açmak, kalbi günün ritmine hazırlamak demektir.',
   },
   sunrise: {
     name: 'Güneş',
     rakats: 'Kerahat Vakti',
     detail: 'Bayram namazı haricinde namaz kılınmaz.',
+    shortSurah: 'Bu vakitte namaz kılınmaz; tesbih ve salavat tavsiye edilir.',
+    dua: '“Elhamdülillahillezi ahyâna...” ile güne şükredin.',
+    quranVerse: '“Güneş doğmazdan önce ve batmadan önce Rabbinizi tesbih edin.” (Taha 130)',
+    commentary: 'Kalbi zikre ayırmak, niyetlerinizi tazelemek için ideal bir pencere.',
   },
   dhuhr: {
     name: 'Öğle',
     rakats: '10 Rekat',
     detail: '4 İlk Sünnet, 4 Farz, 2 Son Sünnet',
+    shortSurah: 'Asr Suresi (Vel asr...)',
+    dua: '“Ya Rabbi, gün ortasında gafletten koru.”',
+    quranVerse: '“Gündüzün iki tarafında ve gecenin yakın saatlerinde namaz kıl.” (Hud 114)',
+    commentary: 'Yoğunlukta kısa bir teneffüs; nefesinizi derleyip kalbinizi yenileyin.',
   },
   asr: {
     name: 'İkindi',
     rakats: '8 Rekat',
     detail: '4 Sünnet, 4 Farz',
+    shortSurah: 'Kevser veya Maun sureleri tavsiye edilir.',
+    dua: '“Allah’ım, kalan zamanı bereketli kıl.”',
+    quranVerse: '“Andolsun zamana ki, insan hüsrandadır; ancak iman edip salih amel işleyenler müstesna.” (Asr 1-3)',
+    commentary: 'Günün ikinci nefesi; yorulan kalbi yeniden hizaya çeker.',
   },
   maghrib: {
     name: 'Akşam',
     rakats: '5 Rekat',
     detail: '3 Farz, 2 Sünnet',
+    shortSurah: 'Kafirun + İhlas kombinasyonu uygulanabilir.',
+    dua: '“Ey Rabbimiz, bizi karanlığın şerrinden muhafaza eyle.”',
+    quranVerse: '“O’nun ayetlerinden biri de geceyi ve gündüzü yaratmasıdır.” (Rum 23)',
+    commentary: 'Günün kapanış perdesi; aile içi birlik ve beraberlik vurgusu taşır.',
   },
   isha: {
     name: 'Yatsı',
     rakats: '13 Rekat',
     detail: '4 İlk Sünnet, 4 Farz, 2 Son Sünnet, 3 Vitir',
+    shortSurah: 'Şems veya Leyl sureleri kalbi dinginleştirir.',
+    dua: '“Rabbim, geceyi bize huzur, uykumuzu ibadet eyle.”',
+    quranVerse: '“Gecenin bir kısmında da namaz kıl; bu senin için ayrıca bir nafiledir.” (İsra 79)',
+    commentary: 'Gecenin sessizliğinde teslimiyet, kalbin dinlenme vaktidir.',
   },
 };
 
@@ -108,7 +129,593 @@ const RELIGIOUS_DAYS = [
   { year: 2027, date: '2027-10-10', name: 'Mevlid Kandili' },
 ];
 
+const FOCUS_REFLECTIONS = [
+  {
+    title: 'Vakit Bilinci',
+    body: 'Her vakit, gününüzü yeniden şekillendirmek için verilen küçük bir fırsattır.',
+  },
+  {
+    title: 'Sükûnet',
+    body: 'Kıbleyi bulurken kalbiniz de yönünü bulsun; niyetiniz pusulanız olsun.',
+  },
+  {
+    title: 'Şükür',
+    body: 'Vakitlerin düzeni, hayatın içindeki rahmetin ritmini fısıldar.',
+  },
+  {
+    title: 'Hazırlık',
+    body: 'Ezan henüz duyulmadıysa bile kalbinizi vakte hazırlamak sizde.',
+  },
+];
+
+const HERO_GRADIENT = ['#010817', '#031126', '#0B1831', '#0f172a'];
+
+const ZIKR_GOALS = [
+  {
+    key: 'morningTasbih',
+    label: 'Sabah Tesbihatı',
+    period: 'Günlük',
+    target: 33,
+    unit: 'tesbih',
+    suggestion: 'Subhanallah, Elhamdulillah, Allahu Ekber tesbihatını 33’er defa tekrar edin.',
+    reminder: 'İmsak sonrası 5 dakikalık sessiz bir alan oluşturun.',
+    color: '#38bdf8',
+  },
+  {
+    key: 'salawat',
+    label: 'Salavat Zinciri',
+    period: 'Günlük',
+    target: 50,
+    unit: 'salavat',
+    suggestion: '“Allahümme salli ala Seyyidina Muhammed” ile gönlünüzü yumuşatın.',
+    reminder: 'Öğle ve ikindi arası kısa molalarda 10’ar tekrar hedefleyin.',
+    color: '#f472b6',
+  },
+  {
+    key: 'weeklyYasin',
+    label: 'Haftalık Yasin',
+    period: 'Haftalık',
+    target: 1,
+    unit: 'hatim',
+    suggestion: 'Hafta boyunca parçalara bölüp Yasin-i Şerif’i tamamlayın.',
+    reminder: 'Cumartesi sabahı veya Perşembe akşamı sessiz bir zaman belirleyin.',
+    color: '#34d399',
+  },
+];
+
+const YASIN_TEXT = String.raw`Yasin Suresi (1-12. Ayetler)
+
+1. Ayet
+
+Okunuşu: Yâ-Sîn.
+
+Anlamı: Yâsîn.
+
+2. Ayet
+
+Okunuşu: Vel-Kur'ânil-hakîm.
+
+Anlamı: Hikmet dolu Kur'an'a andolsun ki,
+
+3. Ayet
+
+Okunuşu: İnneke leminel-murselîn.
+
+Anlamı: Sen elbette (peygamber) gönderilenlerdensin.
+
+4. Ayet
+
+Okunuşu: Alâ sırâtın mustekîm.
+
+Anlamı: Dosdoğru bir yol üzeresin.
+
+5. Ayet
+
+Okunuşu: Tenzîlel-azîzir-rahîm.
+
+Anlamı: Kur'an, mutlak güç sahibi, çok merhametli Allah tarafından indirilmiştir.
+
+6. Ayet
+
+Okunuşu: Litunzira kavmen mâ unzira âbâuhum fehum gâfilûn.
+
+Anlamı: Ataları uyarılmamış, bu yüzden de gaflet içinde olan bir kavmi uyarman için indirilmiştir.
+
+7. Ayet
+
+Okunuşu: Lekad hakkal-kavlu alâ ekserihim fehum lâ yu'minûn.
+
+Anlamı: Andolsun, onların çoğu üzerine o söz (azap) hak olmuştur. Artık onlar iman etmezler.
+
+8. Ayet
+
+Okunuşu: İnnâ cealnâ fî a'nâkıhim aglâlen fehiye ilel-ezkâni fehum mukmehûn.
+
+Anlamı: Onların boyunlarına demir halkalar geçirdik, o halkalar çenelerine dayanmıştır. Bu sebeple kafaları yukarıya kalkık durumdadır.
+
+9. Ayet
+
+Okunuşu: Ve cealnâ min beyni eydîhim sedden ve min halfihim sedden feağşeynâhum fehum lâ yubsirûn.
+
+Anlamı: Biz onların önlerine bir set, arkalarına da bir set çektik ve gözlerini perdeledik. Artık görmezler.
+
+10. Ayet
+
+Okunuşu: Ve sevâun aleyhim eenzertehum em lem tunzirhum lâ yu'minûn.
+
+Anlamı: Onları uyarsan da, uyarmasan da onlar için birdir, inanmazlar.
+
+11. Ayet
+
+Okunuşu: İnnemâ tunziru menittebeaz-zikra ve haşiyer-rahmâne bil-gayb, febeşşirhu bimağfiretin ve ecrin kerîm.
+
+Anlamı: Sen ancak Zikr'e (Kur'an'a) uyanı ve görmediği hâlde Rahmân'dan korkan kimseyi uyarırsın. İşte onu bir bağışlanma ve güzel bir mükâfatla müjdele.
+
+12. Ayet
+
+Okunuşu: İnnâ nahnu nuhyil-mevtâ ve nektubu mâ kaddemû ve âsârahum, ve kulle şey'in ahsaynâhu fî imâmin mubîn.
+
+Anlamı: Şüphesiz ölüleri ancak biz diriltiriz. Onların yaptıklarını ve bıraktıkları eserleri yazarız. Biz her şeyi apaçık bir kitapta (Levh-i Mahfuz'da) bir bir kaydetmişizdir.
+
+2. Bölüm (13 - 27. Ayetler)
+
+13. Ayet
+
+Okunuşu: Vadrib lehum meselen ashâbel-karyeh. İz câehel-murselûn.
+
+Anlamı: Onlara, şu şehir halkını misal getir: Hani onlara elçiler gelmişti.
+
+14. Ayet
+
+Okunuşu: İz erselnâ ileyhimusneyni fekezzebûhumâ feazzeznâ bisâlisin fekâlû innâ ileykum murselûn.
+
+Anlamı: İşte o zaman biz, onlara iki elçi göndermiştik. Onları yalanladılar. Bunun üzerine üçüncü bir elçi göndererek (onları) destekledik. Onlar, "Biz size gönderilmiş elçileriz!" dediler.
+
+15. Ayet
+
+Okunuşu: Kâlû mâ entum illâ beşerun mislunâ ve mâ enzeler-rahmânu min şey'in in entum illâ tekzibûn.
+
+Anlamı: Elçilere dediler ki: "Siz de ancak bizim gibi birer insansınız. Rahmân, herhangi bir şey indirmiş değildir. Siz ancak yalan söylüyorsunuz."
+
+16. Ayet
+
+Okunuşu: Kâlû rabbunâ ya'lemu innâ ileykum lemurselûn.
+
+Anlamı: (Elçiler) dediler ki: "Rabbimiz biliyor; biz gerçekten size gönderilmiş elçileriz."
+
+17. Ayet
+
+Okunuşu: Ve mâ aleynâ illel-belâgul-mubîn.
+
+Anlamı: "Bize düşen ancak apaçık bir tebliğdir."
+
+18. Ayet
+
+Okunuşu: Kâlû innâ tetayyernâ bikum, lein lem tentehû lenercumennekum ve leyemessennekum minnâ azâbun elîm.
+
+Anlamı: Dediler ki: "Şüphesiz biz sizin yüzünüzden uğursuzluğa uğradık. Eğer vazgeçmezseniz, sizi mutlaka taşlarız ve bizim tarafımızdan size elem dolu bir azap dokunur."
+
+19. Ayet
+
+Okunuşu: Kâlû tâirukum meakum, ein zukkirtum, bel entum kavmun musrifûn.
+
+Anlamı: Elçiler de, "Uğursuzluğunuz kendinizdendir. Size öğüt verildiği için mi (uğursuzluğa uğruyorsunuz?). Hayır, siz aşırı giden bir kavimsiniz" dediler.
+
+20. Ayet
+
+Okunuşu: Ve câe min aksal-medîneti raculun yes'â kâle yâ kavmittebiul-murselîn.
+
+Anlamı: Şehrin öbür ucundan bir adam koşarak geldi. "Ey kavmim! Bu elçilere uyun" dedi.
+
+21. Ayet
+
+Okunuşu: İttebiû men lâ yes'elukum ecran ve hum muhtedûn.
+
+Anlamı: "Sizden hiçbir ücret istemeyen kimselere uyun, onlar hidayete erdirilmiş kimselerdir."
+
+22. Ayet
+
+Okunuşu: Ve mâ liye lâ a'budullezî fetaranî ve ileyhi turceûn.
+
+Anlamı: "Hem ben, ne diye beni yaratana kulluk etmeyeyim. Oysa siz de yalnızca O’na döndürüleceksiniz."
+
+23. Ayet
+
+Okunuşu: Eettehizu min dûnihî âliheten in yuridnir-rahmânu bidurrin lâ tugni annî şefâatuhum şey'en ve lâ yunkizûn.
+
+Anlamı: "O’nu bırakıp da başka ilâhlar mı edineyim? Eğer Rahmân bana bir zarar vermek istese, onların şefaati bana hiçbir fayda sağlamaz ve beni kurtaramazlar."
+
+24. Ayet
+
+Okunuşu: İnnî izen lefî dalâlin mubîn.
+
+Anlamı: "O takdirde ben mutlaka açık bir sapıklık içinde olurum."
+
+25. Ayet
+
+Okunuşu: İnnî âmentu birabbikum fesmeûn.
+
+Anlamı: "Şüphesiz ben Rabbinize inandım. Gelin, beni dinleyin!"
+
+26. Ayet
+
+Okunuşu: Kîledhulil-cennete, kâle yâ leyte kavmî ya'lemûn.
+
+Anlamı: (Kavmi onu öldürdüğünde kendisine): "Cennete gir!" denildi. O da, "Keşke kavmim, Rabbimin beni bağışladığını ve beni ikram edilenlerden kıldığını bilseydi!" dedi.
+
+27. Ayet
+
+Okunuşu: Bimâ gafera lî rabbî ve cealenî minel-mukramîn.
+
+Anlamı: (Anlamı 26. ayetin içinde verilmiştir: Rabbimin beni bağışladığını ve beni ikram edilenlerden kıldığını bilseydi!)
+
+3. Bölüm (28 - 40. Ayetler)
+
+28. Ayet
+
+Okunuşu: Ve mâ enzelnâ alâ kavmihî min ba'dihî min cundin mines-semâi ve mâ kunnâ munzilîn.
+
+Anlamı: Kendisinden sonra kavmi üzerine (onları cezalandırmak için) gökten hiçbir ordu indirmedik. İndirecek de değildik.
+
+29. Ayet
+
+Okunuşu: İn kânet illâ sayhaten vâhideten feizâ hum hâmidûn.
+
+Anlamı: Sadece korkunç bir ses oldu. Bir de baktılar ki sönüp gitmişler.
+
+30. Ayet
+
+Okunuşu: Yâ hasraten alel-ibâd, mâ ye'tîhim min resûlin illâ kânû bihî yestehziûn.
+
+Anlamı: Yazık o kullara! Kendilerine bir peygamber gelmezdi ki, onunla alay etmesinler.
+
+31. Ayet
+
+Okunuşu: Elem yerav kem ehleknâ kablehum minel-kurûni ennehum ileyhim lâ yerciûn.
+
+Anlamı: Kendilerinden önce nice nesilleri helâk ettiğimizi; onların artık kendilerine dönmeyeceklerini görmediler mi?
+
+32. Ayet
+
+Okunuşu: Ve in kullun lemmâ cemîun ledeynâ muhdarûn.
+
+Anlamı: Onların hepsi de mutlaka toplanıp (hesap için) huzurumuza çıkarılacaklardır.
+
+33. Ayet
+
+Okunuşu: Ve âyetun lehumul-ardul-meytetu, ahyeynâhâ ve ahracnâ minhâ habben feminhu ye'kulûn.
+
+Anlamı: Ölü toprak onlar için bir delildir. Biz onu dirilttik ve ondan taneler çıkardık da onlardan yiyorlar.
+
+34. Ayet
+
+Okunuşu: Ve cealnâ fîhâ cennâtin min nahîlin ve a'nâbin ve feccernâ fîhâ minel-uyûn.
+
+Anlamı: Orada hurma bahçeleri ve üzüm bağları yaptık ve içlerinden pınarlar fışkırttık.
+
+35. Ayet
+
+Okunuşu: Liye'kulû min semerihî ve mâ amilethu eydîhim, efelâ yeşkurûn.
+
+Anlamı: Ürününden ve kendi elleriyle yaptıklarından yesinler diye. Hâlâ şükretmeyecekler mi?
+
+36. Ayet
+
+Okunuşu: Subhânellezî halakal-ezvâce kullehâ mimmâ tunbitul-ardu ve min enfusihim ve mimmâ lâ ya'lemûn.
+
+Anlamı: Yerin bitirdiği şeylerden, insanların kendilerinden ve (daha) bilemedikleri şeylerden bütün çiftleri yaratanın şanı yücedir.
+
+37. Ayet
+
+Okunuşu: Ve âyetun lehumul-leylu neslehu minhun-nehâra feizâ hum muzlimûn.
+
+Anlamı: Gece de onlar için bir delildir. Gündüzü ondan çekip alırız, bir de bakarsın karanlıkta kalmışlardır.
+
+38. Ayet
+
+Okunuşu: Veş-şemsu tecrî limustekarrin lehâ, zâlike takdîrul-azîzil-alîm.
+
+Anlamı: Güneş de kendi yörüngesinde akıp gitmektedir. Bu, mutlak güç sahibi, hakkıyla bilen Allah’ın takdiridir.
+
+39. Ayet
+
+Okunuşu: Vel-kamera kaddernâhu menâzile hattâ âde kel-urcûnil-kadîm.
+
+Anlamı: Ayın dolaşımı için de konak yerleri belirledik. Nihayet o, eğrilmiş kuru hurma dalı gibi olur.
+
+40. Ayet
+
+Okunuşu: Leş-şemsu yenbegî lehâ en tudrikel-kamera ve lel-leylu sâbikun-nehâr, ve kullun fî felekin yesbehûn.
+
+Anlamı: Ne güneş aya yetişebilir, ne de gece gündüzü geçebilir. Her biri bir yörüngede yüzmektedir.
+
+4. Bölüm (41 - 54. Ayetler)
+
+41. Ayet
+
+Okunuşu: Ve âyetun lehum ennâ hamelnâ zurriyyetehum fil-fulkil-meşhûn.
+
+Anlamı: Onların soylarını dolu gemide taşımamız da onlar için bir delildir.
+
+42. Ayet
+
+Okunuşu: Ve halaknâ lehum min mislihî mâ yerkebûn.
+
+Anlamı: Biz onlar için o gemi gibi binecekleri nice şeyler yarattık.
+
+43. Ayet
+
+Okunuşu: Ve in neşe' nugrikhum felâ sarîha lehum ve lâ hum yunkazûn.
+
+Anlamı: Biz istesek onları suda boğarız da kendileri için ne imdat çağrısı yapan olur, ne de kurtarılırlar.
+
+44. Ayet
+
+Okunuşu: İllâ rahmeten minnâ ve metâan ilâ hîn.
+
+Anlamı: Ancak tarafımızdan bir rahmet olarak ve bir süreye kadar daha yaşasınlar diye kurtarılırlar.
+
+45. Ayet
+
+Okunuşu: Ve izâ kîle lehumuttekû mâ beyne eydîkum ve mâ halfekum leallekum turhamûn.
+
+Anlamı: Onlara, "Önünüzde ve arkanızda olan şeylerden (dünya ve ahiret azabından) sakının ki size merhamet edilsin" denildiğinde yüz çevirirler.
+
+46. Ayet
+
+Okunuşu: Ve mâ te'tîhim min âyetin min âyâti rabbihim illâ kânû anhâ mu'ridîn.
+
+Anlamı: Onlara Rablerinin âyetlerinden bir âyet gelmez ki ondan yüz çeviriyor olmasınlar.
+
+47. Ayet
+
+Okunuşu: Ve izâ kîle lehum enfikû mimmâ razakakumullâhu kâlellezîne keferû lillezîne âmenû enut'imu men lev yeşâullâhu at'amehu, in entum illâ fî dalâlin mubîn.
+
+Anlamı: Onlara, "Allah’ın sizi rızıklandırdığı şeylerden Allah yolunda harcayın" denildiği zaman, inkâr edenler iman edenlere, "Allah’ın, dileseydi doyuracağı kimseleri biz mi doyuralım? Siz gerçekten apaçık bir sapıklık içindesiniz" derler.
+
+48. Ayet
+
+Okunuşu: Ve yekûlûne metâ hâzel-va'du in kuntum sâdikîn.
+
+Anlamı: "Eğer doğru söyleyenlerseniz, bu tehdit ne zaman gerçekleşecek?" diyorlar.
+
+49. Ayet
+
+Okunuşu: Mâ yenzurûne illâ sayhaten vâhideten te'huzuhum ve hum yehissimûn.
+
+Anlamı: Onlar, birbirleriyle çekişip dururken kendilerini yakalayacak korkunç bir sesten başka bir şey beklemiyorlar.
+
+50. Ayet
+
+Okunuşu: Felâ yestetîûne tavsiyeten ve lâ ilâ ehlihim yerciûn.
+
+Anlamı: İşte o anda onlar ne bir vasiyette bulunabilirler, ne de ailelerine dönebilirler.
+
+51. Ayet
+
+Okunuşu: Ve nufiha fis-sûri feizâ hum minel-ecdâsi ilâ rabbihim yensilûn.
+
+Anlamı: Sûra üfürülür. Bir de bakarsın, kabirlerden çıkmış Rablerine koşuyorlar.
+
+52. Ayet
+
+Okunuşu: Kâlû yâ veylenâ men beasenâ min merkadinenâ, hâzâ mâ va'ader-rahmânu ve sadekal-murselûn.
+
+Anlamı: "Vay halimize! Bizi uykumuzdan kim kaldırdı? Bu, Rahmân’ın vaad ettiği şeydir. Peygamberler doğru söylemişler" derler.
+
+53. Ayet
+
+Okunuşu: İn kânet illâ sayhaten vâhideten feizâ hum cemîun ledeynâ muhdarûn.
+
+Anlamı: Sadece korkunç bir ses olur. Bir de bakarsın hepsi toplanmış huzurumuzda hazır bulunuyorlar.
+
+54. Ayet
+
+Okunuşu: Fel-yevme lâ tuzlemu nefsun şey'en ve lâ tuczevne illâ mâ kuntum ta'melûn.
+
+Anlamı: O gün kimseye, hiçbir haksızlık yapılmaz. Siz ancak işlediklerinizin karşılığını görürsünüz.
+
+5. Bölüm (55 - 70. Ayetler)
+
+55. Ayet
+
+Okunuşu: İnne ashâbel-cennetil-yevme fî şugulin fâkihûn.
+
+Anlamı: Şüphesiz cennettekiler o gün nimetlerle meşguldürler, zevk sürerler.
+
+56. Ayet
+
+Okunuşu: Hum ve ezvâcuhum fî zilâlin alel-erâiki muttekiûn.
+
+Anlamı: Onlar ve eşleri gölgelerde, koltuklara yaslanmışlardır.
+
+57. Ayet
+
+Okunuşu: Lehum fîhâ fâkihetun ve lehum mâ yeddaûn.
+
+Anlamı: Orada onlar için her çeşit meyve vardır. Bütün istekleri yerine getirilir.
+
+58. Ayet
+
+Okunuşu: Selâmun kavlen min rabbin rahîm.
+
+Anlamı: Onlara, çok merhametli olan Rab’den bir söz olarak "Selâm" vardır.
+
+59. Ayet
+
+Okunuşu: Vemtâzul-yevme eyyuhel-mucrimûn.
+
+Anlamı: (Allah şöyle der:) "Ey suçlular! Ayrılın bu gün!"
+
+60. Ayet
+
+Okunuşu: Elem a'hed ileykum yâ benî âdeme en lâ ta'buduş-şeytâne, innehu lekum aduvvun mubîn.
+
+Anlamı: "Ey Âdemoğulları! Ben size, şeytana kulluk etmeyin. Çünkü o sizin için apaçık bir düşmandır, diye emretmedim mi?"
+
+61. Ayet
+
+Okunuşu: Ve eni'budûnî, hâzâ sırâtun mustekîm.
+
+Anlamı: "Ve bana kulluk edin. İşte bu dosdoğru yoldur, diye emretmedim mi?"
+
+62. Ayet
+
+Okunuşu: Ve lekad edalle minkum cibillen kesîran, efelem tekûnû ta'kilûn.
+
+Anlamı: "Andolsun, o sizden pek çok nesli saptırdı. Hiç düşünmüyor muydunuz?"
+
+63. Ayet
+
+Okunuşu: Hâzihî cehennemulletî kuntum tûadûn.
+
+Anlamı: "İşte bu, tehdit edildiğiniz cehennemdir."
+
+64. Ayet
+
+Okunuşu: İslevhel-yevme bimâ kuntum tekfurûn.
+
+Anlamı: "İnkâr ettiğinizden dolayı bugün girin oraya!"
+
+65. Ayet
+
+Okunuşu: El-yevme nahtimu alâ efvâhihim ve tukellimunâ eydîhim ve teşhedu erculuhum bimâ kânû yeksibûn.
+
+Anlamı: O gün biz onların ağızlarını mühürleriz. Elleri bize konuşur, ayakları da kazandıklarına şahitlik eder.
+
+66. Ayet
+
+Okunuşu: Ve lev neşâu letamesnâ alâ a'yunihim festebekus-sırâta feennâ yubsirûn.
+
+Anlamı: Eğer dileseydik, gözlerini silme kör ederdik de (bu halde) yolu bulmaya çalışırlardı. Fakat nasıl göreceklerdi?
+
+67. Ayet
+
+Okunuşu: Ve lev neşâu lemesahnâhum alâ mekânetihim femestetâû mudiyyen ve lâ yerciûn.
+
+Anlamı: Yine dileseydik, oldukları yerde kılıklarını değiştirirdik de ne ileri gidebilirlerdi, ne de geri dönebilirlerdi.
+
+68. Ayet
+
+Okunuşu: Ve men nuammirhu nunekkishu fil-halkı, efelâ ya'kilûn.
+
+Anlamı: Kime uzun ömür verirsek, biz onun yaratılışını tersine çeviririz. Hiç düşünmüyorlar mı?
+
+69. Ayet
+
+Okunuşu: Ve mâ allemnâhuş-şi'ra ve mâ yenbegî lehu, in huve illâ zikrun ve Kur'ânun mubîn.
+
+Anlamı: Biz o Peygamber’e şiir öğretmedik. Bu ona yaraşmaz da. O’na vahyedilen ancak bir öğüt ve apaçık bir Kur'an’dır.
+
+70. Ayet
+
+Okunuşu: Liyunzira men kâne hayyen ve yehikkal-kavlu alel-kâfirîn.
+
+Anlamı: (Aklen ve fikren) diri olanları uyarması ve kâfirler hakkındaki o sözün (azabın) gerçekleşmesi için (Kur'an’ı indirdik).
+
+6. Bölüm (71 - 83. Ayetler)
+
+71. Ayet
+
+Okunuşu: Evelem yerav ennâ halaknâ lehum mimmâ amilet eydînâ en'âmen fehum lehâ mâlikûn.
+
+Anlamı: Görmediler mi ki, biz onlar için, ellerimizin eseri olan hayvanlar yarattık da onlar bu hayvanlara sahip oluyorlar?
+
+72. Ayet
+
+Okunuşu: Ve zellelnâhâ lehum feminhâ rakûbuhum ve minhâ ye'kulûn.
+
+Anlamı: Biz o hayvanları kendilerine boyun eğdirdik. Onlardan bir kısmı binekleridir, bir kısmını da yerler.
+
+73. Ayet
+
+Okunuşu: Ve lehum fîhâ menâfiu ve meşâribu, efelâ yeşkurûn.
+
+Anlamı: Onlar için bu hayvanlarda yararlar ve içecekler vardır. Hâlâ şükretmeyecekler mi?
+
+74. Ayet
+
+Okunuşu: Vettehazû min dûnillâhi âliheten leallehum yunsarûn.
+
+Anlamı: Belki kendilerine yardım edilir diye Allah’ı bırakıp da başka ilâhlar edindiler.
+
+75. Ayet
+
+Okunuşu: Lâ yestetîûne nasrahum ve hum lehum cundun muhdarûn.
+
+Anlamı: Onların ilâhları kendilerine yardım edemezler. Onlar ise ilâhlarını korumak için hazır kıtadırlar.
+
+76. Ayet
+
+Okunuşu: Felâ yahzunke kavluhum, innâ na'lemu mâ yusirrûne ve mâ yu'linûn.
+
+Anlamı: (Ey Muhammed!) Artık onların sözü seni üzmesin. Çünkü biz onların gizlediklerini de açığa vurduklarını da biliyoruz.
+
+77. Ayet
+
+Okunuşu: Evelem yeral-insânu ennâ halaknâhu min nutfetin feizâ huve hasîmun mubîn.
+
+Anlamı: İnsan görmedi mi ki, biz onu bir nutfeden yarattık. Bir de bakarsın ki, apaçık bir düşman kesilmiş.
+
+78. Ayet
+
+Okunuşu: Ve darabe lenâ meselen ve nesiye halkahu, kâle men yuhyil-izâme ve hiye ramîm.
+
+Anlamı: Kendi yaratılışını unutarak bize bir örnek getirdi: "Çürümüş kemikleri kim diriltecek?" dedi.
+
+79. Ayet
+
+Okunuşu: Kul yuhyîhellezî enşeehâ evvele merratin, ve huve bikulli halkın alîm.
+
+Anlamı: De ki: "Onları ilk defa var eden diriltecektir. O, her yaratılmışı hakkıyla bilendir."
+
+80. Ayet
+
+Okunuşu: Ellezî ceale lekum mineş-şeceril-ahdari nâran feizâ entum minhu tûkidûn.
+
+Anlamı: O, sizin için yeşil ağaçtan ateş yaratandır. Şimdi siz ondan yakıp duruyorsunuz.
+
+81. Ayet
+
+Okunuşu: Eveleysellezî halakas-semâvâti vel-arda bikâdirin alâ en yahluka mislehum? Belâ ve huvel-hallâkul-alîm.
+
+Anlamı: Gökleri ve yeri yaratan Allah’ın, onların benzerini yaratmaya gücü yetmez mi? Elbette yeter. O, hakkıyla yaratandır, hakkıyla bilendir.
+
+82. Ayet
+
+Okunuşu: İnnemâ emruhû izâ erâde şey'en en yekûle lehu kun fe yekûn.
+
+Anlamı: Bir şeyi dilediğinde O’nun emri o şeye yalnızca "Ol!" demektir. O da hemen oluverir.
+
+83. Ayet
+
+Okunuşu: Fesubhânellezî biyedihî melekûtu kulli şey'in ve ileyhi turceûn.
+
+Anlamı: Her şeyin hükümranlığı elinde olan Allah’ın şanı yücedir! Siz yalnız O’na döndürüleceksiniz.`;
+
+const YASIN_LINES = YASIN_TEXT.split('\n').map((line) => {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return { type: 'divider', text: '' };
+  }
+  if (/^\d+\. Ayet/.test(trimmed)) {
+    return { type: 'label', text: trimmed };
+  }
+  if (trimmed.includes('Bölüm') || trimmed.startsWith('Yasin Suresi')) {
+    return { type: 'heading', text: trimmed };
+  }
+  if (trimmed.startsWith('Okunuşu:')) {
+    return { type: 'arabic', text: trimmed.replace('Okunuşu: ', '') };
+  }
+  if (trimmed.startsWith('Anlamı:')) {
+    return { type: 'meaning', text: trimmed.replace('Anlamı: ', '') };
+  }
+  return { type: 'plain', text: trimmed };
+});
+
 const NOTIFICATION_PREF_KEY = 'notificationsEnabled';
+const ZIKR_PREF_KEY = 'zikrProgress';
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 // Bildirim Handler
 Notifications.setNotificationHandler({
@@ -123,6 +730,7 @@ Notifications.setNotificationHandler({
 export default function App() {
   // --- STATE TANIMLARI ---
   const [location, setLocation] = useState(null);
+  const [locationLabel, setLocationLabel] = useState('Konum belirleniyor...');
   const [prayerTimes, setPrayerTimes] = useState(null);
   const [currentPrayer, setCurrentPrayer] = useState(null);
   const [nextPrayer, setNextPrayer] = useState(null);
@@ -144,11 +752,14 @@ export default function App() {
   const [deviceHeading, setDeviceHeading] = useState(0);
 
   // Namaz Bilgileri Modal State
-  const [infoModalVisible, setInfoModalVisible] = useState(false);
-  const [selectedPrayerInfo, setSelectedPrayerInfo] = useState(null);
+  const [guideModalVisible, setGuideModalVisible] = useState(false);
+  const [guideContent, setGuideContent] = useState(null);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notificationsPrefLoaded, setNotificationsPrefLoaded] = useState(false);
+  const [zikrProgress, setZikrProgress] = useState({});
+  const [zikrLoaded, setZikrLoaded] = useState(false);
+  const [yasinModalVisible, setYasinModalVisible] = useState(false);
 
   // Animasyon Refleri
   const splashFadeAnim = useRef(new Animated.Value(1)).current;
@@ -220,6 +831,51 @@ export default function App() {
     loadNotificationPreference();
   }, []);
 
+  useEffect(() => {
+    const loadZikrProgress = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(ZIKR_PREF_KEY);
+        if (stored) {
+          setZikrProgress(JSON.parse(stored));
+        }
+      } catch (error) {
+        console.log('Zikir progresi okunamadı', error);
+      } finally {
+        setZikrLoaded(true);
+      }
+    };
+    loadZikrProgress();
+  }, []);
+
+  useEffect(() => {
+    if (!zikrLoaded) return;
+    const now = new Date();
+    const currentDay = now.toDateString();
+    const currentWeek = `${now.getFullYear()}-W${Math.ceil(
+      ((now - new Date(now.getFullYear(), 0, 1)) / DAY_IN_MS + now.getDay() + 1) / 7
+    )}`;
+
+    setZikrProgress((prev) => {
+      const updated = { ...prev };
+      ZIKR_GOALS.forEach((goal) => {
+        const key = `${goal.key}Meta`;
+        const meta = prev[key] || {};
+        if (goal.period === 'Günlük' && meta.lastReset !== currentDay) {
+          updated[goal.key] = 0;
+          updated[key] = { ...meta, lastReset: currentDay };
+        }
+        if (goal.period === 'Haftalık' && meta.lastReset !== currentWeek) {
+          updated[goal.key] = 0;
+          updated[key] = { ...meta, lastReset: currentWeek };
+        }
+      });
+      AsyncStorage.setItem(ZIKR_PREF_KEY, JSON.stringify(updated)).catch((error) =>
+        console.log('Zikir reset kaydedilemedi', error)
+      );
+      return updated;
+    });
+  }, [zikrLoaded]);
+
   const setupApp = async () => {
     // 1. Bildirim İzni
     await requestNotificationPermissions();
@@ -271,6 +927,7 @@ export default function App() {
       });
       
       setLocation(locationData);
+      resolveLocationLabel(locationData.coords);
       
       // Hesaplamaları yap
       const coords = new Coordinates(locationData.coords.latitude, locationData.coords.longitude);
@@ -294,6 +951,26 @@ export default function App() {
       console.log(err);
       setError('Konum alınamadı.');
       setLoading(false);
+    }
+  };
+
+  const resolveLocationLabel = async (coords) => {
+    try {
+      const [place] = await Location.reverseGeocodeAsync({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      });
+      if (place) {
+        const district = place.district || place.subregion || place.city;
+        const city = place.city || place.region || place.country;
+        const formatted = [district, city].filter(Boolean).join(', ');
+        setLocationLabel(formatted || 'Konum bulundu');
+      } else {
+        setLocationLabel('Konum bulunamadı');
+      }
+    } catch (error) {
+      console.log('Konum etiketi alınamadı', error);
+      setLocationLabel('Konum bulunamadı');
     }
   };
 
@@ -340,13 +1017,13 @@ export default function App() {
         { key: 'isha', time: prayerTimes.isha },
     ].filter(item => item.time);
 
-    let current = null;
+    let current = times[times.length - 1] || null;
     let next = null;
 
     for (let i = 0; i < times.length; i++) {
         if (now < times[i].time) {
             next = times[i];
-            current = times[i - 1] || times[5]; // Bir önceki, yoksa dünün yatsısı (basitleştirilmiş)
+            current = times[i - 1] || current;
             break;
         }
     }
@@ -354,11 +1031,10 @@ export default function App() {
     if (!next) {
         // Gün bitmiş, sonraki İmsak (Yarın)
         next = times[0]; 
-        current = times[5]; // Yatsı
-        // Not: Tam doğruluk için yarının vakitlerini hesaplamak gerekir ama bu basitçe iş görür
+        current = times[times.length - 1] || null;
     }
 
-    setCurrentPrayer(current ? { name: current.key } : null);
+    setCurrentPrayer(current ? { name: current.key, time: current.time } : null);
     setNextPrayer(next ? { name: next.key, time: next.time } : null);
 
     // Countdown
@@ -380,8 +1056,24 @@ export default function App() {
     }
   };
 
+  const updateZikrProgress = (goalKey, delta) => {
+    const goal = ZIKR_GOALS.find((item) => item.key === goalKey);
+    if (!goal) return;
+    setZikrProgress((prev) => {
+      const current = prev[goalKey] ?? 0;
+      const next = Math.min(Math.max(current + delta, 0), goal.target);
+      const metaKey = `${goalKey}Meta`;
+      const meta = prev[metaKey] || {};
+      const updated = { ...prev, [goalKey]: next, [metaKey]: meta };
+      AsyncStorage.setItem(ZIKR_PREF_KEY, JSON.stringify(updated)).catch((error) =>
+        console.log('Zikir progresi kaydedilemedi', error)
+      );
+      return updated;
+    });
+  };
+
   // --- AUDIO ---
-  const handlePrayerPress = async (prayerKey) => {
+  const handlePrayerSoundPress = async (prayerKey) => {
     if (prayerKey === 'sunrise') {
         Alert.alert("Bilgi", "Kerahat vaktinde ezan okunmaz.");
         return;
@@ -429,12 +1121,11 @@ export default function App() {
     }
   };
 
-  const handlePrayerLongPress = (key) => {
+  const openPrayerGuide = (key) => {
     const info = PRAYER_DETAILS[key];
-    if (info) {
-      setSelectedPrayerInfo(info);
-      setInfoModalVisible(true);
-    }
+    if (!info) return;
+    setGuideContent({ key, ...info });
+    setGuideModalVisible(true);
   };
 
   const triggerTestEzanNotification = async () => {
@@ -583,6 +1274,35 @@ export default function App() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const upcomingReligiousDay = RELIGIOUS_DAYS.find((day) => new Date(day.date) >= todayStart);
+  const focusReflection = useMemo(() => {
+    const index = new Date().getDate() % FOCUS_REFLECTIONS.length;
+    return FOCUS_REFLECTIONS[index];
+  }, []);
+  const prayerProgress = useMemo(() => {
+    if (!currentPrayer?.time || !nextPrayer?.time) return 0;
+    const nowTs = Date.now();
+    let adjustedStart = currentPrayer.time.getTime();
+    let adjustedEnd = nextPrayer.time.getTime();
+
+    if (adjustedStart > nowTs) {
+      adjustedStart -= DAY_IN_MS;
+    }
+    if (adjustedEnd <= adjustedStart) {
+      adjustedEnd += DAY_IN_MS;
+    }
+
+    const total = adjustedEnd - adjustedStart;
+    if (total <= 0) return 0;
+
+    const elapsed = nowTs - adjustedStart;
+    return Math.min(Math.max(elapsed / total, 0), 1);
+  }, [currentPrayer, nextPrayer, timeRemaining]);
+  const prayerProgressDisplay = `${Math.round(prayerProgress * 100)}%`;
+  const directionMessage = isQiblaAligned
+    ? 'Kıbleye hizalandınız'
+    : qiblaDirectionText
+      ? (qiblaDirectionText === 'Sağa çevir' ? 'Biraz sağa çevirin' : 'Biraz sola çevirin')
+      : 'Veri bekleniyor';
 
   const cardinalPoints = [
     { label: 'K', style: styles.cardinalNorth },
@@ -620,113 +1340,166 @@ export default function App() {
 
   // --- MAIN RENDER ---
   return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerTopRow}>
-            <Text style={styles.title}>Namaz Vakitleri</Text>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
-              activeOpacity={0.8}
-              onPress={() => setCalendarModalVisible(true)}
-            >
-              <Ionicons name="calendar" size={20} color="#0F172A" />
-            </TouchableOpacity>
+    <LinearGradient colors={HERO_GRADIENT} style={styles.gradientBackground}>
+      <StatusBar style="light" />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.heroCard}>
+          <View style={styles.heroHeader}>
+            <View>
+              <Text style={styles.heroChip}>Konum</Text>
+              <Text style={styles.heroLocation}>{locationLabel}</Text>
+              <Text style={styles.heroDate}>{formatDate(new Date())}</Text>
+            </View>
+            <Image source={require('./assets/logo.png')} style={styles.heroLogo} />
           </View>
-          <Text style={styles.date}>{formatDate(new Date())}</Text>
-          <TouchableOpacity style={styles.testBtn} onPress={triggerTestEzanNotification}>
-            <Text style={styles.testBtnText}>Test Bildirimi Çal</Text>
-          </TouchableOpacity>
-          {loading && <ActivityIndicator color="#10B981" style={{ marginTop: 10 }} />}
-          {error && <Text style={{ color: 'red', marginTop: 5 }}>{error}</Text>}
-        </View>
 
-        <View style={styles.notificationToggleCard}>
-          <View style={styles.notificationToggleTexts}>
-            <Text style={styles.notificationToggleTitle}>Ezan Bildirimleri</Text>
-            <Text style={styles.notificationToggleSubtitle}>
-              {notificationsEnabled ? 'Vakit girince ezan sesi çalar' : 'Bildirimler kapalı'}
+          <View style={styles.heroCountdownRow}>
+            <View>
+              <Text style={styles.heroCountdownLabel}>Sonraki Vakit</Text>
+              <Text style={styles.heroCountdownPrayer}>
+                {nextPrayer ? PRAYER_NAMES[nextPrayer.name] : 'Hazırlan'}
+              </Text>
+            </View>
+            <View style={styles.heroCountdownTime}>
+              <Ionicons name="time-outline" size={18} color="#E0F2FE" />
+              <Text style={styles.heroCountdownClock}>
+                {nextPrayer?.time ? formatTime(nextPrayer.time) : '--:--'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.heroTimerRow}>
+            {['hours', 'minutes', 'seconds'].map((unit, index) => (
+              <React.Fragment key={unit}>
+                <View style={styles.heroTimerBox}>
+                  <Text style={styles.heroTimerText}>
+                    {timeRemaining ? timeRemaining[unit].toString().padStart(2, '0') : '--'}
+                  </Text>
+                  <Text style={styles.heroTimerLabel}>
+                    {unit === 'hours' ? 'SAAT' : unit === 'minutes' ? 'DAKİKA' : 'SANİYE'}
+                  </Text>
+                </View>
+                {index < 2 && <Text style={styles.heroTimerDot}>:</Text>}
+              </React.Fragment>
+            ))}
+          </View>
+
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.min(prayerProgress * 100, 100)}%` }]} />
+          </View>
+          <View style={styles.progressMeta}>
+            <Text style={styles.progressMetaText}>İlerleme {prayerProgressDisplay}</Text>
+            <Text style={styles.progressMetaText}>
+              Aktif: {currentPrayer ? PRAYER_NAMES[currentPrayer.name] : 'Belirleniyor'}
             </Text>
           </View>
-          <Switch
-            value={notificationsEnabled}
-            onValueChange={handleNotificationsToggle}
-            disabled={!notificationsPrefLoaded}
-            trackColor={{ false: '#CBD5F5', true: '#BBF7D0' }}
-            thumbColor={notificationsEnabled ? '#10B981' : '#F4F4F5'}
-            ios_backgroundColor="#CBD5F5"
-          />
-        </View>
 
-        {/* Countdown */}
-        {nextPrayer && (
-          <View style={styles.countdownCard}>
-            <View style={styles.countdownHeaderRow}>
-              <View style={styles.countdownBadge}>
-                <Ionicons name="time-outline" size={16} color="#ECFDF3" />
-                <Text style={styles.countdownBadgeText}>Sonraki Vakit</Text>
-              </View>
-              <View style={styles.countdownMeta}>
-                <Ionicons name="alarm-outline" size={16} color="#ECFDF3" />
-                <Text style={styles.countdownMetaText}>
-                  {nextPrayer?.time ? formatTime(nextPrayer.time) : '--:--'}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.countdownTitle}>{PRAYER_NAMES[nextPrayer.name]}</Text>
-            <Text style={styles.countdownSubtitle}>Vaktine kalan süre</Text>
-            <View style={styles.timerRow}>
-              <Text style={styles.timerText}>
-                {timeRemaining ? timeRemaining.hours.toString().padStart(2, '0') : '--'}
-              </Text>
-              <Text style={styles.timerDot}>:</Text>
-              <Text style={styles.timerText}>
-                {timeRemaining ? timeRemaining.minutes.toString().padStart(2, '0') : '--'}
-              </Text>
-              <Text style={styles.timerDot}>:</Text>
-              <Text style={styles.timerText}>
-                {timeRemaining ? timeRemaining.seconds.toString().padStart(2, '0') : '--'}
+          {loading && <ActivityIndicator color="#A5F3FC" style={styles.heroLoader} />}
+          {error && <Text style={styles.errorText}>{error}</Text>}
+
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroBadge}>
+              <Ionicons
+                name={notificationsEnabled ? 'notifications' : 'notifications-off'}
+                size={16}
+                color="#F0FDFA"
+              />
+              <Text style={styles.heroBadgeText}>
+                {notificationsEnabled ? 'Bildirimler açık' : 'Bildirimler kapalı'}
               </Text>
             </View>
           </View>
-        )}
 
-        {/* Vakit Listesi */}
-        <View style={styles.listContainer}>
-          {prayerTimes && PRAYER_ORDER.map((key) => {
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleTextCol}>
+              <Text style={styles.toggleTitle}>Ezan Bildirimleri</Text>
+              <Text style={styles.toggleSubtitle}>
+                {notificationsEnabled ? 'Vakit girince ezan sesi çalar' : 'Bildirimler kapalı'}
+              </Text>
+              {!notificationsPrefLoaded && (
+                <Text style={styles.toggleHelper}>Tercihler yükleniyor...</Text>
+              )}
+            </View>
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={handleNotificationsToggle}
+              disabled={!notificationsPrefLoaded}
+              trackColor={{ false: '#1F2937', true: '#34D399' }}
+              thumbColor={notificationsEnabled ? '#052e16' : '#9CA3AF'}
+              ios_backgroundColor="#1F2937"
+            />
+          </View>
+        </View>
+
+        <View style={styles.insightRow}>
+          <View style={styles.insightCard}>
+            <View style={styles.insightBadge}>
+              <Ionicons name="calendar" size={16} color="#A7F3D0" />
+              <Text style={styles.insightBadgeText}>Dini Gün</Text>
+            </View>
+            <Text style={styles.insightText}>
+              {upcomingReligiousDay ? upcomingReligiousDay.name : 'Takvim güncel'}
+            </Text>
+            <Text style={styles.insightMeta}>
+              {upcomingReligiousDay
+                ? formatReligiousDate(upcomingReligiousDay.date)
+                : 'Yaklaşan özel gün bulunmuyor'}
+            </Text>
+            <TouchableOpacity
+              style={styles.smallButton}
+              onPress={() => setCalendarModalVisible(true)}
+            >
+              <Text style={styles.smallButtonText}>Takvimi aç</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Günün Vakitleri</Text>
+          <Text style={styles.sectionSubtitle}>
+            Uzun basarak rekat detaylarını görün, dokunarak ezanı dinleyin.
+          </Text>
+        </View>
+
+        <View style={styles.prayerList}>
+          {prayerTimes ? PRAYER_ORDER.map((key) => {
             const isActive = currentPrayer?.name === key;
             const isPlaying = playingSound === key;
             const time = prayerTimes[key];
-
-            // Kart ikonu ve renk paleti
             const config = {
-              fajr: { icon: 'moon', color: '#4F46E5', bg: '#EEF2FF' },
-              sunrise: { icon: 'sunny-outline', color: '#F97316', bg: '#FFF7ED' },
-              dhuhr: { icon: 'sunny', color: '#EAB308', bg: '#FEFCE8' },
-              asr: { icon: 'cloud-outline', color: '#0EA5E9', bg: '#ECFEFF' },
-              maghrib: { icon: 'partly-sunny', color: '#F97316', bg: '#FFF7ED' },
-              isha: { icon: 'moon-outline', color: '#0F172A', bg: '#E5E7EB' },
-            }[key] || { icon: 'time-outline', color: '#64748B', bg: '#E5E7EB' };
+              fajr: { icon: 'moon', color: '#C7D2FE', bg: 'rgba(99,102,241,0.15)' },
+              sunrise: { icon: 'sunny-outline', color: '#FDBA74', bg: 'rgba(251,146,60,0.15)' },
+              dhuhr: { icon: 'sunny', color: '#FDE68A', bg: 'rgba(250,204,21,0.15)' },
+              asr: { icon: 'cloud-outline', color: '#7DD3FC', bg: 'rgba(14,165,233,0.15)' },
+              maghrib: { icon: 'partly-sunny', color: '#FDBA74', bg: 'rgba(251,146,60,0.15)' },
+              isha: { icon: 'moon-outline', color: '#E0E7FF', bg: 'rgba(71,85,105,0.25)' },
+            }[key] || { icon: 'time-outline', color: '#e5e7eb', bg: 'rgba(148,163,184,0.2)' };
+            const metaText =
+              key === 'sunrise'
+                ? 'Kerahat vaktinde ezan okunmaz'
+                : isActive
+                  ? 'Vakit içindesiniz'
+                  : nextPrayer?.name === key
+                    ? 'Sıradaki vakit'
+                    : 'Hazırlık zamanı';
 
             return (
               <TouchableOpacity
                 key={key}
-                style={[styles.row, isActive && styles.activeRow]}
-                activeOpacity={0.8}
-                onLongPress={() => handlePrayerLongPress(key)}
+                style={[styles.prayerCard, isActive && styles.prayerActive]}
+                activeOpacity={0.85}
+                onPress={() => openPrayerGuide(key)}
               >
-                <View style={styles.rowLeft}>
-                  <View style={[styles.rowIconShell, { backgroundColor: config.bg }]}> 
+                <View style={styles.prayerLeft}>
+                  <View style={[styles.prayerIconShell, { backgroundColor: config.bg }]}>
                     <Ionicons name={config.icon} size={22} color={config.color} />
                   </View>
-                  <View style={styles.rowTextContainer}>
-                    <View style={styles.rowTitleLine}>
-                      <Text style={[styles.rowName, isActive && styles.activeText]}>
-                        {PRAYER_NAMES[key]}
-                      </Text>
+                  <View style={styles.prayerInfo}>
+                    <View style={styles.prayerTitleRow}>
+                      <Text style={styles.prayerName}>{PRAYER_NAMES[key]}</Text>
                       {isActive && (
                         <View style={styles.currentBadge}>
                           <Text style={styles.currentBadgeText}>Şimdi</Text>
@@ -741,19 +1514,118 @@ export default function App() {
                         />
                       )}
                     </View>
+                    <Text style={styles.prayerMetaText}>{metaText}</Text>
                   </View>
                 </View>
-                <View style={styles.rowRight}>
-                  <Text style={[styles.rowTime, isActive && styles.activeText]}>
-                    {formatTime(time)}
-                  </Text>
+                <View style={styles.prayerRight}>
+                  <Text style={styles.prayerTime}>{formatTime(time)}</Text>
                 </View>
               </TouchableOpacity>
             );
-          })}
+          }) : (
+            <Text style={styles.placeholderText}>Namaz vakitleri yükleniyor...</Text>
+          )}
         </View>
 
-        {/* Kıble */}
+        <View style={styles.habitsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Zikir & Hedefler</Text>
+            <Text style={styles.sectionSubtitle}>
+              Günlük ve haftalık zikrinizi kısa önerilerle takip edin.
+            </Text>
+          </View>
+
+          {!zikrLoaded ? (
+            <ActivityIndicator color="#A5F3FC" style={{ marginVertical: 24 }} />
+          ) : (
+            <View style={styles.habitGrid}>
+              {ZIKR_GOALS.map((goal) => {
+                const value = zikrProgress[goal.key] ?? 0;
+                const ratio = Math.min(value / goal.target, 1);
+                const remaining = Math.max(goal.target - value, 0);
+                const disableMinus = value <= 0;
+                const disablePlus = value >= goal.target;
+                return (
+                  <View key={goal.key} style={styles.habitCard}>
+                    <View style={styles.habitHeader}>
+                      <View>
+                        <Text style={styles.habitLabel}>{goal.label}</Text>
+                        <Text style={styles.habitPeriod}>
+                          {goal.period} hedef • {value}/{goal.target} {goal.unit}
+                        </Text>
+                      </View>
+                      <View style={[styles.habitChip, { borderColor: goal.color }]}>
+                        <Text style={[styles.habitChipText, { color: goal.color }]}>
+                          {goal.period}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.habitSuggestion}>{goal.suggestion}</Text>
+                    <Text style={styles.habitReminder}>{goal.reminder}</Text>
+                    <View style={styles.habitProgressTrack}>
+                      <View
+                        style={[
+                          styles.habitProgressFill,
+                          { width: `${ratio * 100}%`, backgroundColor: goal.color },
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.habitProgressMeta}>
+                      <Text style={styles.habitRemaining}>
+                        Kalan: {remaining} {goal.unit}
+                      </Text>
+                      <Text style={styles.habitPercent}>{Math.round(ratio * 100)}%</Text>
+                    </View>
+                    <View style={styles.habitActions}>
+                      <TouchableOpacity
+                        style={[
+                          styles.habitActionBtn,
+                          styles.habitActionBtnMinus,
+                          disableMinus && styles.habitActionBtnDisabled,
+                        ]}
+                        disabled={disableMinus}
+                        activeOpacity={0.8}
+                        onPress={() => updateZikrProgress(goal.key, -1)}
+                      >
+                        <Ionicons name="remove" size={18} color="#F8FAFC" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.habitActionBtn,
+                          styles.habitActionBtnAdd,
+                          disablePlus && styles.habitActionBtnDisabled,
+                        ]}
+                        disabled={disablePlus}
+                        activeOpacity={0.8}
+                        onPress={() => updateZikrProgress(goal.key, 1)}
+                      >
+                        <Ionicons name="add" size={18} color="#022c22" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.yasinCard}>
+            <View style={styles.yasinText}>
+              <Text style={styles.yasinTitle}>Yasin Suresi Tam Metin</Text>
+              <Text style={styles.yasinSubtitle}>
+                1-83. ayetlerin okunuşu ve anlamını ihtiyaç duyduğunuzda açıp okuyun.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.yasinButton}
+              activeOpacity={0.85}
+              onPress={() => setYasinModalVisible(true)}
+            >
+              <Ionicons name="book" size={18} color="#1e3a8a" style={styles.yasinButtonIcon} />
+              <Text style={styles.yasinButtonText}>Yasin’i Oku</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {qiblaAngle !== null && (
           <View style={styles.qiblaContainer}>
             <View style={styles.qiblaHeader}>
@@ -766,20 +1638,24 @@ export default function App() {
                   <Text style={styles.qiblaSubtitle}>Cihaz başlığı: {deviceHeadingDisplay}</Text>
                 </View>
               </View>
-              {qiblaDiffAbs !== null && (
-                <View style={[styles.alignStatus, isQiblaAligned ? styles.alignStatusSuccess : styles.alignStatusWarn]}>
-                  <Ionicons
-                    name={isQiblaAligned ? 'checkmark-circle' : 'navigate'}
-                    size={16}
-                    color={isQiblaAligned ? '#0F766E' : '#B45309'}
-                  />
-                  <Text
-                    style={[styles.alignStatusText, isQiblaAligned ? styles.alignStatusTextSuccess : styles.alignStatusTextWarn]}
-                  >
-                    {isQiblaAligned ? 'Hizalı' : `${qiblaDirectionText} (${qiblaDiffAbs.toFixed(0)}°)`}
-                  </Text>
+            </View>
+
+            <View style={styles.directionCard}>
+              <View style={styles.directionBadge}>
+                <Ionicons name="navigate" size={16} color="#93C5FD" />
+                <Text style={styles.directionBadgeText}>Kıble yönlendirme</Text>
+              </View>
+              <Text style={styles.directionText}>{directionMessage}</Text>
+              <View style={styles.directionMetaRow}>
+                <View style={[styles.directionMetaItem, styles.directionMetaItemDivider]}>
+                  <Text style={styles.directionMetaLabel}>Fark</Text>
+                  <Text style={styles.directionMetaValue}>{qiblaDiffDisplay}</Text>
                 </View>
-              )}
+                <View style={styles.directionMetaItem}>
+                  <Text style={styles.directionMetaLabel}>Cihaz</Text>
+                  <Text style={styles.directionMetaValue}>{deviceHeadingDisplay}</Text>
+                </View>
+              </View>
             </View>
 
             <View style={styles.compassWrapper}>
@@ -843,18 +1719,27 @@ export default function App() {
                 <Text style={[styles.infoValue, isQiblaAligned && styles.infoValueAligned]}>{qiblaDiffDisplay}</Text>
               </View>
             </View>
-
           </View>
         )}
 
-        <View style={styles.memorialCard}>
-          <Text style={styles.memorialTitle}>"Zeliha Tiryakioğlu" hayrına yapılmıştır.</Text>
-          <Text style={styles.memorialSubtitle}>Ruhuna bir Fatiha okumanız dileğiyle...</Text>
-        </View>
+        <View style={styles.focusGrid}>
+          <View style={styles.focusCard}>
+            <View style={styles.focusBadge}>
+              <Ionicons name="book-outline" size={16} color="#C7D2FE" />
+              <Text style={styles.focusBadgeText}>Günün Notu</Text>
+            </View>
+            <Text style={styles.focusTitle}>{focusReflection.title}</Text>
+            <Text style={styles.focusBody}>{focusReflection.body}</Text>
+          </View>
 
+          <View style={[styles.focusCard, styles.memorialCard]}>
+            <Text style={styles.memorialTitle}>"Zeliha Tiryakioğlu" hayrına yapılmıştır.</Text>
+            <Text style={styles.memorialSubtitle}>Ruhuna bir Fatiha okumanız dileğiyle...</Text>
+          </View>
+        </View>
       </ScrollView>
-      
-        {/* Dini Günler Modal */}
+
+      {/* Dini Günler Modal */}
       <Modal
         visible={calendarModalVisible}
         transparent={true}
@@ -932,341 +1817,656 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* Namaz Bilgileri Modal */}
+      {/* Namaz Rehberi Modal */}
       <Modal
-        visible={infoModalVisible}
+        visible={guideModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setInfoModalVisible(false)}
+        onRequestClose={() => setGuideModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{selectedPrayerInfo?.name}</Text>
-            <Text style={styles.modalRakats}>{selectedPrayerInfo?.rakats}</Text>
-            <Text style={styles.modalDetail}>{selectedPrayerInfo?.detail}</Text>
+          <View style={[styles.modalContent, styles.guideModal]}>
+            <View style={styles.guideHeader}>
+              <View>
+                <Text style={styles.modalTitle}>{guideContent?.name}</Text>
+                <Text style={styles.modalRakats}>{guideContent?.rakats}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseIcon}
+                onPress={() => setGuideModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color="#0F172A" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalDetail}>{guideContent?.detail}</Text>
+
+            <View style={styles.guideCard}>
+              <Text style={styles.guideCardLabel}>Kısa Sure / Tilavet</Text>
+              <Text style={styles.guideCardText}>{guideContent?.shortSurah}</Text>
+            </View>
+
+            <View style={styles.guideCard}>
+              <Text style={styles.guideCardLabel}>Dua Önerisi</Text>
+              <Text style={styles.guideCardText}>{guideContent?.dua}</Text>
+            </View>
+
+            <View style={styles.guideCard}>
+              <Text style={styles.guideCardLabel}>Kur'an Hatırlatması</Text>
+              <Text style={styles.guideCardText}>{guideContent?.quranVerse}</Text>
+            </View>
+
+            <View style={styles.guideCard}>
+              <Text style={styles.guideCardLabel}>Tefsir Notu</Text>
+              <Text style={styles.guideCardText}>{guideContent?.commentary}</Text>
+            </View>
+
             <TouchableOpacity
-              style={styles.modalCloseButton}
-              onPress={() => setInfoModalVisible(false)}
+              style={[
+                styles.playButton,
+                guideContent?.key === 'sunrise' && styles.playButtonDisabled,
+              ]}
+              disabled={guideContent?.key === 'sunrise'}
+              onPress={() => guideContent && handlePrayerSoundPress(guideContent.key)}
             >
-              <Text style={styles.modalCloseButtonText}>Kapat</Text>
+              <Ionicons name="musical-notes" size={18} color="#022c22" />
+              <Text style={styles.playButtonText}>
+                {guideContent?.key === 'sunrise' ? 'Bu vakitte ezan çalınmaz' : 'Ezanı Dinle'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Yasin-i Şerif Modal */}
+      <Modal
+        visible={yasinModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setYasinModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.yasinModal]}>
+            <View style={styles.yasinModalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Yasin-i Şerif</Text>
+                <Text style={styles.modalSubtitle}>Tam okunuş ve anlam rehberi</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseIcon}
+                onPress={() => setYasinModalVisible(false)}
+              >
+                <Ionicons name="close" size={22} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.yasinList} showsVerticalScrollIndicator={false}>
+              {YASIN_LINES.map((line, index) => {
+                if (line.type === 'heading') {
+                  return (
+                    <Text key={index} style={[styles.yasinLine, styles.yasinHeading]}>
+                      {line.text}
+                    </Text>
+                  );
+                }
+                if (line.type === 'divider') {
+                  return <View key={index} style={styles.yasinDivider} />;
+                }
+                if (line.type === 'label') {
+                  return (
+                    <Text key={index} style={[styles.yasinLine, styles.yasinLabel]}>
+                      {line.text}
+                    </Text>
+                  );
+                }
+                if (line.type === 'arabic') {
+                  return (
+                    <Text key={index} style={[styles.yasinLine, styles.yasinArabicLine]}>
+                      {line.text}
+                    </Text>
+                  );
+                }
+                if (line.type === 'meaning') {
+                  return (
+                    <Text key={index} style={[styles.yasinLine, styles.yasinMeaningLine]}>
+                      {line.text}
+                    </Text>
+                  );
+                }
+                return (
+                  <Text key={index} style={styles.yasinLine}>
+                    {line.text}
+                  </Text>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.yasinCloseButton}
+              onPress={() => setYasinModalVisible(false)}
+            >
+              <Text style={styles.yasinCloseButtonText}>Kapat</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </LinearGradient>
   );
 }
 
 // --- STYLES ---
 const styles = StyleSheet.create({
-  container: {
+  gradientBackground: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#010817',
   },
-  splashContainer: {
-    flex: 1,
-    backgroundColor: '#FAFAFA',
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 120,
+  },
+  heroCard: {
+    borderRadius: 32,
+    padding: 24,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    marginBottom: 24,
+  },
+  heroHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
   },
-  splashContent: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splashLogo: {
-    width: 100,
-    height: 100,
-    marginBottom: 20,
-  },
-  splashText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
-  },
-  splashQuoteCard: {
-    marginTop: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 18,
-    backgroundColor: 'rgba(17,24,39,0.85)',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    alignItems: 'center',
-  },
-  splashQuote: {
-    color: '#F9FAFB',
-    fontSize: 16,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  splashQuoteRef: {
-    marginTop: 6,
-    color: '#A5F3FC',
+  heroChip: {
     fontSize: 12,
+    color: '#A5F3FC',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  heroLocation: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  heroDate: {
+    fontSize: 14,
+    color: 'rgba(248,250,252,0.7)',
+    marginTop: 2,
+  },
+  heroLogo: {
+    width: 72,
+    height: 72,
+    opacity: 0.85,
+  },
+  heroCountdownRow: {
+    marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroCountdownLabel: {
+    color: 'rgba(248,250,252,0.6)',
+    fontSize: 13,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  scrollContent: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 80,
+  heroCountdownPrayer: {
+    color: '#F8FAFC',
+    fontSize: 26,
+    fontWeight: '800',
+    marginTop: 4,
   },
-  header: {
-    marginBottom: 30,
+  heroCountdownTime: {
+    flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
+    backgroundColor: 'rgba(15,118,110,0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
   },
-  headerTopRow: {
-    width: '100%',
+  heroCountdownClock: {
+    color: '#ECFDF3',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  heroTimerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 24,
   },
-  headerIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notificationToggleCard: {
-    width: '100%',
-    backgroundColor: '#fff',
+  heroTimerBox: {
+    width: '32%',
+    paddingVertical: 12,
     borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    alignItems: 'center',
+  },
+  heroTimerText: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    fontVariant: ['tabular-nums'],
+  },
+  heroTimerLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(248,250,252,0.6)',
+    letterSpacing: 2,
+  },
+  heroTimerDot: {
+    fontSize: 30,
+    color: 'rgba(248,250,252,0.3)',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.25)',
+    marginTop: 24,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#34D399',
+  },
+  progressMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  progressMetaText: {
+    color: 'rgba(248,250,252,0.7)',
+    fontSize: 13,
+  },
+  heroLoader: {
+    marginTop: 16,
+  },
+  errorText: {
+    color: '#F87171',
+    marginTop: 8,
+    fontSize: 13,
+  },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 20,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15,118,110,0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginRight: 12,
+    marginTop: 8,
+  },
+  heroBadgeText: {
+    marginLeft: 6,
+    color: '#E0F2FE',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  actionRow: {
+    marginBottom: 24,
+  },
+  toggleRow: {
+    marginTop: 18,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 20,
   },
-  notificationToggleTexts: {
+  toggleTextCol: {
     flex: 1,
     marginRight: 12,
   },
-  notificationToggleTitle: {
+  toggleTitle: {
+    color: '#F8FAFC',
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
   },
-  notificationToggleSubtitle: {
-    marginTop: 4,
+  toggleSubtitle: {
+    color: 'rgba(248,250,252,0.65)',
+    marginTop: 2,
     fontSize: 13,
-    color: '#6B7280',
   },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: 0.5,
-  },
-  date: {
-    fontSize: 18,
-    color: '#6B7280',
-    marginTop: 6,
-    fontWeight: '600',
-  },
-  testBtn: {
-    marginTop: 10,
-    backgroundColor: '#eee',
-    padding: 8,
-    borderRadius: 8,
-    alignSelf: 'flex-start'
-  },
-  testBtnText: {
+  toggleHelper: {
+    marginTop: 4,
+    color: '#FBBF24',
     fontSize: 12,
-    color: '#333'
   },
-  countdownCard: {
-    backgroundColor: '#10B981',
-    borderRadius: 20,
-    padding: 20,
-    alignItems: 'center',
-    marginBottom: 30,
-    shadowColor: "#10B981",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  countdownHeaderRow: {
+  primaryAction: {
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  countdownBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 118, 110, 0.35)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  countdownBadgeText: {
-    color: '#ECFDF3',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  countdownMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 118, 110, 0.25)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  countdownMetaText: {
-    color: '#ECFDF3',
-    fontSize: 13,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  countdownLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    marginBottom: 5,
-    textTransform: 'uppercase',
-    fontWeight: '600',
-  },
-  countdownTitle: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  countdownSubtitle: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-    marginTop: 2,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  timerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timerText: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#fff',
-    fontVariant: ['tabular-nums'],
-  },
-  timerDot: {
-    fontSize: 42,
-    color: 'rgba(255,255,255,0.5)',
-    marginHorizontal: 5,
-    marginBottom: 5,
-  },
-  listContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    marginBottom: 30,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    justifyContent: 'flex-start',
+    backgroundColor: '#22C55E',
+    borderRadius: 24,
     paddingVertical: 18,
     paddingHorizontal: 18,
-    borderRadius: 14,
-    marginBottom: 10,
-    backgroundColor: '#F9FAFB',
+    marginBottom: 16,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  activeRow: {
-    backgroundColor: '#ECFDF3',
-    shadowColor: '#16A34A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 1,
-  },
-  rowIconShell: {
+  primaryActionIcon: {
     width: 46,
     height: 46,
     borderRadius: 23,
+    backgroundColor: '#BBF7D0',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  rowTextContainer: {
-    flex: 1,
-    minWidth: 0,
+  primaryActionText: {
+    color: '#022c22',
+    fontSize: 18,
+    fontWeight: '700',
   },
-  rowTitleLine: {
+  primaryActionSub: {
+    color: '#065f46',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  insightRow: {
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  insightCard: {
+    borderRadius: 24,
+    padding: 18,
+    backgroundColor: 'rgba(15,23,42,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    marginBottom: 16,
+  },
+  insightBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  rowName: {
-    fontSize: 20,
-    color: '#333',
-    fontWeight: '500',
-  },
-  rowSubText: {
-    marginTop: 2,
+  insightBadgeText: {
+    marginLeft: 6,
+    color: 'rgba(248,250,252,0.7)',
     fontSize: 12,
-    color: '#6B7280',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  insightText: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  insightMeta: {
+    color: 'rgba(248,250,252,0.65)',
+    fontSize: 13,
+  },
+  smallButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.5)',
+    backgroundColor: 'rgba(59,130,246,0.2)',
+  },
+  smallButtonText: {
+    color: '#BFDBFE',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  habitsSection: {
+    marginTop: 12,
+    marginBottom: 28,
+  },
+  habitGrid: {},
+  habitCard: {
+    borderRadius: 24,
+    padding: 18,
+    backgroundColor: 'rgba(15,23,42,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    marginBottom: 14,
+  },
+  habitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  habitLabel: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  habitPeriod: {
+    color: 'rgba(248,250,252,0.65)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  habitChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  habitChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  habitSuggestion: {
+    color: 'rgba(248,250,252,0.85)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  habitReminder: {
+    color: '#fcd34d',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  habitProgressTrack: {
+    height: 6,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    borderRadius: 999,
+    marginTop: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+  },
+  habitProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  habitProgressMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  habitRemaining: {
+    color: 'rgba(248,250,252,0.7)',
+    fontSize: 12,
+  },
+  habitPercent: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  habitActions: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  habitActionBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(148,163,184,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitActionBtnMinus: {
+    marginRight: 10,
+  },
+  habitActionBtnAdd: {
+    backgroundColor: '#4ade80',
+  },
+  habitActionBtnDisabled: {
+    opacity: 0.5,
+  },
+  yasinCard: {
+    marginTop: 8,
+    borderRadius: 24,
+    padding: 20,
+    backgroundColor: 'rgba(30,64,175,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.35)',
+  },
+  yasinText: {
+    marginBottom: 12,
+  },
+  yasinTitle: {
+    color: '#BFDBFE',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  yasinSubtitle: {
+    color: 'rgba(191,219,254,0.8)',
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  yasinButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#bfdbfe',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  yasinButtonIcon: {
+    marginRight: 8,
+  },
+  yasinButtonText: {
+    color: '#1e3a8a',
+    fontWeight: '700',
+  },
+  sectionHeader: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    color: '#F8FAFC',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  sectionSubtitle: {
+    color: 'rgba(248,250,252,0.6)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  prayerList: {
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    padding: 14,
+    marginBottom: 28,
+  },
+  prayerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 10,
+    backgroundColor: 'rgba(15,23,42,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+  },
+  prayerActive: {
+    borderColor: 'rgba(74,222,128,0.7)',
+    backgroundColor: 'rgba(16,185,129,0.16)',
+  },
+  prayerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  prayerIconShell: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  prayerInfo: {
+    flex: 1,
+  },
+  prayerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  prayerName: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  prayerMetaText: {
+    color: 'rgba(248,250,252,0.65)',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  prayerRight: {
+    marginLeft: 12,
+  },
+  prayerTime: {
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  placeholderText: {
+    color: 'rgba(248,250,252,0.6)',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  currentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(187,247,208,0.2)',
+  },
+  currentBadgeText: {
+    fontSize: 11,
+    color: '#34D399',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   playingIcon: {
     marginLeft: 6,
   },
-  rowTime: {
-    fontSize: 20,
-    color: '#333',
-    fontWeight: '600',
-  },
-  rowRight: {
-    marginLeft: 8,
-    flexShrink: 0,
-  },
-  activeText: {
-    color: '#10B981',
-    fontWeight: '700',
-  },
-  currentBadge: {
-    marginLeft: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: '#DCFCE7',
-  },
-  currentBadgeText: {
-    fontSize: 10,
-    color: '#15803D',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
   qiblaContainer: {
-    padding: 20,
-    borderRadius: 24,
-    backgroundColor: '#0f172a',
-    marginBottom: 40,
+    padding: 22,
+    borderRadius: 28,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    marginBottom: 28,
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.25,
@@ -1282,50 +2482,71 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  directionCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  directionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  directionBadgeText: {
+    marginLeft: 6,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: 'rgba(248,250,252,0.7)',
+    textTransform: 'uppercase',
+  },
+  directionText: {
+    color: '#F8FAFC',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  directionMetaRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  directionMetaItem: {
+    flex: 1,
+  },
+  directionMetaItemDivider: {
+    marginRight: 12,
+  },
+  directionMetaLabel: {
+    color: 'rgba(248,250,252,0.65)',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  directionMetaValue: {
+    marginTop: 4,
+    color: '#F8FAFC',
+    fontSize: 20,
+    fontWeight: '700',
+  },
   qiblaIconShell: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(16,185,129,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   qiblaTitle: {
     fontSize: 18,
-    color: '#fff',
-    fontWeight: '600',
+    color: '#F8FAFC',
+    fontWeight: '700',
   },
   qiblaSubtitle: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(248,250,252,0.6)',
     marginTop: 2,
-  },
-  alignStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  alignStatusText: {
-    fontSize: 13,
-    marginLeft: 6,
-  },
-  alignStatusSuccess: {
-    backgroundColor: 'rgba(16,185,129,0.15)',
-  },
-  alignStatusTextSuccess: {
-    color: '#34D399',
-    fontWeight: '600',
-  },
-  alignStatusWarn: {
-    backgroundColor: 'rgba(251,191,36,0.15)',
-  },
-  alignStatusTextWarn: {
-    color: '#FBBF24',
-    fontWeight: '600',
   },
   compassWrapper: {
     marginTop: 24,
@@ -1454,13 +2675,14 @@ const styles = StyleSheet.create({
   qiblaInfoRow: {
     flexDirection: 'row',
     marginTop: 20,
-    gap: 12,
+    justifyContent: 'space-between',
   },
   qiblaInfoCard: {
     flex: 1,
-    padding: 12,
-    borderRadius: 14,
+    padding: 14,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 6,
   },
   infoLabel: {
     fontSize: 12,
@@ -1477,59 +2699,44 @@ const styles = StyleSheet.create({
   infoValueAligned: {
     color: '#34D399',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+  focusGrid: {
+    marginBottom: 60,
+  },
+  focusCard: {
+    borderRadius: 24,
+    padding: 20,
+    backgroundColor: 'rgba(15,23,42,0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.2)',
+    marginBottom: 16,
+  },
+  focusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 10,
   },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
-    width: '80%',
-    alignItems: 'center',
+  focusBadgeText: {
+    marginLeft: 6,
+    fontSize: 12,
+    color: 'rgba(248,250,252,0.7)',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 12,
-  },
-  modalRakats: {
+  focusTitle: {
+    color: '#F8FAFC',
     fontSize: 20,
-    fontWeight: '600',
-    color: '#10B981',
-    marginBottom: 8,
+    fontWeight: '700',
+    marginBottom: 6,
   },
-  modalDetail: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  modalCloseButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  modalCloseButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  focusBody: {
+    color: 'rgba(248,250,252,0.7)',
+    fontSize: 14,
+    lineHeight: 20,
   },
   memorialCard: {
-    marginTop: 32,
-    borderRadius: 20,
-    padding: 18,
-    backgroundColor: '#111827',
+    backgroundColor: 'rgba(15,15,30,0.85)',
+    borderColor: 'rgba(156,163,175,0.35)',
     alignItems: 'center',
-    shadowColor: '#111827',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 6,
   },
   memorialTitle: {
     color: '#F9FAFB',
@@ -1542,6 +2749,149 @@ const styles = StyleSheet.create({
     color: '#A5F3FC',
     fontSize: 13,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 28,
+    width: '85%',
+    alignItems: 'center',
+  },
+  guideModal: {
+    alignItems: 'stretch',
+    width: '90%',
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  modalRakats: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#10B981',
+    marginBottom: 8,
+  },
+  modalDetail: {
+    fontSize: 16,
+    color: '#475569',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  guideCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+  },
+  guideCardLabel: {
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: '#94A3B8',
+  },
+  guideCardText: {
+    marginTop: 6,
+    color: '#0F172A',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  playButton: {
+    marginTop: 12,
+    backgroundColor: '#A7F3D0',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  playButtonDisabled: {
+    backgroundColor: '#E5E7EB',
+  },
+  playButtonText: {
+    marginLeft: 8,
+    color: '#065f46',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  yasinModal: {
+    width: '90%',
+    maxHeight: '80%',
+    alignItems: 'stretch',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  yasinModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  yasinList: {
+    marginTop: 8,
+  },
+  yasinFullText: {
+    fontSize: 14,
+    color: '#111827',
+    lineHeight: 22,
+  },
+  yasinLine: {
+    marginBottom: 10,
+  },
+  yasinHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  yasinDivider: {
+    height: 8,
+  },
+  yasinLabel: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  yasinArabicLine: {
+    color: '#059669',
+    fontSize: 16,
+    marginTop: 2,
+  },
+  yasinMeaningLine: {
+    color: '#dc2626',
+    marginTop: 2,
+  },
+  yasinCloseButton: {
+    marginTop: 18,
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  yasinCloseButtonText: {
+    color: '#F9FAFB',
+    fontSize: 15,
+    fontWeight: '600',
   },
   calendarModal: {
     width: '90%',
@@ -1623,4 +2973,52 @@ const styles = StyleSheet.create({
     color: '#15803D',
     fontWeight: '600',
   },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#FAFAFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashLogo: {
+    width: 100,
+    height: 100,
+    marginBottom: 20,
+  },
+  splashText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  splashQuoteCard: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17,24,39,0.85)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    alignItems: 'center',
+  },
+  splashQuote: {
+    color: '#F9FAFB',
+    fontSize: 16,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  splashQuoteRef: {
+    marginTop: 6,
+    color: '#A5F3FC',
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
 });
+
+
