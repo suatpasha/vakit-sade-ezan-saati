@@ -28,6 +28,7 @@ import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
+import { Magnetometer, Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PRAYER_NAMES = {
@@ -40,6 +41,80 @@ const PRAYER_NAMES = {
 };
 
 const PRAYER_ORDER = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const PRAYER_NOTIFICATION_KEYS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const HEADING_SMOOTHING_FACTOR = 0.45;
+const HEADING_SAMPLE_WINDOW = 6;
+const HEADING_UPDATE_MS = 120;
+const DECLINATION_SMOOTHING_FACTOR = 0.25;
+const HEADING_COMPASS_OFFSET = 0;
+const NEEDLE_VISUAL_OFFSET = 90; // degrees clockwise adjustment for artwork
+const IMSAKIYE_DAYS = 30;
+const IMSAKIYE_COLUMNS = [
+  { key: 'date', label: 'Tarih', width: 86 },
+  { key: 'fajr', label: 'İmsak', width: 74 },
+  { key: 'sunrise', label: 'Güneş', width: 74 },
+  { key: 'dhuhr', label: 'Öğle', width: 74 },
+  { key: 'asr', label: 'İkindi', width: 74 },
+  { key: 'maghrib', label: 'Akşam', width: 74 },
+  { key: 'isha', label: 'Yatsı', width: 74 },
+];
+const KAABA_COORDS = { latitude: 21.4225, longitude: 39.8262 };
+const EARTH_RADIUS_KM = 6371;
+const degToRad = (deg) => (deg * Math.PI) / 180;
+const radToDeg = (rad) => (rad * 180) / Math.PI;
+const circularMean = (angles) => {
+  if (!angles.length) return null;
+  let sumSin = 0;
+  let sumCos = 0;
+  angles.forEach((angle) => {
+    const rad = degToRad(angle);
+    sumSin += Math.sin(rad);
+    sumCos += Math.cos(rad);
+  });
+  return normalizeAngle(radToDeg(Math.atan2(sumSin, sumCos)));
+};
+
+const normalizeAngle = (angle) => ((angle % 360) + 360) % 360;
+const shortestAngleDelta = (from, to) => {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+};
+const normalizeDelta = (angle) => {
+  const wrapped = ((angle + 180) % 360 + 360) % 360;
+  return wrapped - 180;
+};
+const haversineDistanceKm = (lat1, lon1, lat2, lon2) => {
+  const dLat = degToRad(lat2 - lat1);
+  const dLon = degToRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(degToRad(lat1)) * Math.cos(degToRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
+};
+const initialBearing = (lat1, lon1, lat2, lon2) => {
+  const φ1 = degToRad(lat1);
+  const φ2 = degToRad(lat2);
+  const λ1 = degToRad(lon1);
+  const λ2 = degToRad(lon2);
+  const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) -
+    Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
+  return normalizeAngle(radToDeg(Math.atan2(y, x)));
+};
+const formatCoordinate = (value, positiveLabel, negativeLabel) => {
+  if (!Number.isFinite(value)) return '--';
+  const direction = value >= 0 ? positiveLabel : negativeLabel;
+  return `${Math.abs(value).toFixed(4)}° ${direction}`;
+};
+const formatDistanceKm = (value) => {
+  if (!Number.isFinite(value)) return '--';
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)} bin km`;
+  }
+  return `${Math.round(value)} km`;
+};
 
 // Namaz Bilgileri
 const PRAYER_DETAILS = {
@@ -760,6 +835,15 @@ export default function App() {
   const [zikrProgress, setZikrProgress] = useState({});
   const [zikrLoaded, setZikrLoaded] = useState(false);
   const [yasinModalVisible, setYasinModalVisible] = useState(false);
+  const [calendarTab, setCalendarTab] = useState('imsakiye');
+  const headingSubscriptionRef = useRef(null);
+  const headingFilterRef = useRef(null);
+  const headingWindowRef = useRef([]);
+  const accelerometerDataRef = useRef({ x: 0, y: 0, z: -9.81 });
+  const headingDeclinationRef = useRef(0);
+  const locationHeadingSubRef = useRef(null);
+  const locationHeadingDriveRef = useRef(false);
+  const lastRawMagHeadingRef = useRef(null);
 
   // Animasyon Refleri
   const splashFadeAnim = useRef(new Animated.Value(1)).current;
@@ -767,6 +851,45 @@ export default function App() {
   const logoRotateAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const arrowPulseAnim = useRef(new Animated.Value(1)).current;
+  const adjustedHeading = useMemo(
+    () =>
+      deviceHeading !== null
+        ? normalizeAngle(deviceHeading + HEADING_COMPASS_OFFSET)
+        : null,
+    [deviceHeading]
+  );
+  const needleVisualRotation = `${NEEDLE_VISUAL_OFFSET}deg`;
+  const needleLabelCounterRotation = `${-NEEDLE_VISUAL_OFFSET}deg`;
+  const deviceHeadingVisual = adjustedHeading !== null
+    ? normalizeAngle(adjustedHeading + NEEDLE_VISUAL_OFFSET)
+    : null;
+  const todayReferenceKey = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.getTime();
+  }, []);
+
+  const imsakiyeData = useMemo(() => {
+    if (!location?.coords) return [];
+    const coords = new Coordinates(location.coords.latitude, location.coords.longitude);
+    const params = CalculationMethod.Turkey();
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: IMSAKIYE_DAYS }).map((_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      const prayers = new PrayerTimes(coords, date, params);
+      return {
+        date,
+        fajr: prayers.fajr,
+        sunrise: prayers.sunrise,
+        dhuhr: prayers.dhuhr,
+        asr: prayers.asr,
+        maghrib: prayers.maghrib,
+        isha: prayers.isha,
+      };
+    });
+  }, [location]);
 
   const getAngleDiff = (target, current) => {
     if (target === null || current === null || Number.isNaN(target) || Number.isNaN(current)) {
@@ -776,6 +899,29 @@ export default function App() {
     while (diff < -180) diff += 360;
     while (diff > 180) diff -= 360;
     return diff;
+  };
+
+  const pushHeadingSample = (incoming) => {
+    if (!Number.isFinite(incoming)) {
+      return null;
+    }
+    const normalized = normalizeAngle(incoming);
+    const window = headingWindowRef.current;
+    window.push(normalized);
+    if (window.length > HEADING_SAMPLE_WINDOW) {
+      window.shift();
+    }
+    const averaged = circularMean(window) ?? normalized;
+    const last = headingFilterRef.current;
+    if (last === null || last === undefined) {
+      headingFilterRef.current = averaged;
+      return averaged;
+    }
+    const eased = normalizeAngle(
+      last + shortestAngleDelta(last, averaged) * HEADING_SMOOTHING_FACTOR
+    );
+    headingFilterRef.current = eased;
+    return eased;
   };
 
   // --- EFFECT: BAŞLANGIÇ AYARLARI ---
@@ -829,6 +975,25 @@ export default function App() {
       }
     };
     loadNotificationPreference();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (headingSubscriptionRef.current?.remove) {
+        headingSubscriptionRef.current.remove();
+      }
+      headingSubscriptionRef.current = null;
+      if (locationHeadingSubRef.current?.remove) {
+        locationHeadingSubRef.current.remove();
+      }
+      locationHeadingSubRef.current = null;
+      locationHeadingDriveRef.current = false;
+      headingFilterRef.current = null;
+      headingWindowRef.current = [];
+      accelerometerDataRef.current = { x: 0, y: 0, z: -9.81 };
+      headingDeclinationRef.current = 0;
+      lastRawMagHeadingRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -974,15 +1139,137 @@ export default function App() {
     }
   };
 
-  const startHeadingWatch = async () => {
-    try {
-        await Location.watchHeadingAsync((obj) => {
-            let heading = obj.trueHeading !== -1 ? obj.trueHeading : obj.magHeading;
-            setDeviceHeading(heading);
-        });
-    } catch (e) {
-        console.log(e);
+  const ensureLocationHeadingWatcher = async () => {
+    if (locationHeadingSubRef.current) {
+      return;
     }
+    try {
+      const sub = await Location.watchHeadingAsync((obj) => {
+        const trueHeading =
+          typeof obj?.trueHeading === 'number' && obj.trueHeading >= 0
+            ? obj.trueHeading
+            : null;
+        const magHeading =
+          typeof obj?.magHeading === 'number' && obj.magHeading >= 0
+            ? obj.magHeading
+            : null;
+
+        if (trueHeading !== null) {
+          const reference =
+            magHeading !== null ? magHeading : lastRawMagHeadingRef.current;
+          if (reference !== null && reference !== undefined) {
+            const desiredDeclination = shortestAngleDelta(reference, trueHeading);
+            const delta = shortestAngleDelta(
+              headingDeclinationRef.current,
+              desiredDeclination
+            );
+            headingDeclinationRef.current = normalizeDelta(
+              headingDeclinationRef.current + delta * DECLINATION_SMOOTHING_FACTOR
+            );
+          }
+
+          if (locationHeadingDriveRef.current || !headingSubscriptionRef.current) {
+            const eased = pushHeadingSample(trueHeading);
+            if (eased !== null) {
+              setDeviceHeading(eased);
+            }
+          }
+        }
+      });
+      locationHeadingSubRef.current = sub;
+    } catch (error) {
+      console.log('Konum tabanlı heading açılamadı', error);
+    }
+  };
+
+  const computeTiltCompensatedHeading = (mag, accel) => {
+    if (!mag) return null;
+    const { x: magX, y: magY, z: magZ } = mag;
+    if (magX == null || magY == null || magZ == null) {
+      return null;
+    }
+    const { x: accX = 0, y: accY = 0, z: accZ = -9.81 } = accel || {};
+
+    const accNorm = Math.sqrt(accX * accX + accY * accY + accZ * accZ) || 1;
+    const pitch = Math.asin(-accX / accNorm);
+    const roll = Math.atan2(accY, accZ);
+
+    const xh = magX * Math.cos(pitch) + magZ * Math.sin(pitch);
+    const yh =
+      magX * Math.sin(roll) * Math.sin(pitch) +
+      magY * Math.cos(roll) -
+      magZ * Math.sin(roll) * Math.cos(pitch);
+
+    if (xh === 0 && yh === 0) {
+      return null;
+    }
+
+    let heading = Math.atan2(yh, xh);
+    if (!Number.isFinite(heading)) {
+      return null;
+    }
+    return normalizeAngle(radToDeg(heading));
+  };
+
+  const startHeadingWatch = async () => {
+    if (!headingSubscriptionRef.current) {
+      let magnetSubscription = null;
+      let accelSubscription = null;
+
+      try {
+        Accelerometer.setUpdateInterval(HEADING_UPDATE_MS);
+        accelSubscription = Accelerometer.addListener((data) => {
+          const { x = 0, y = 0, z = -9.81 } = data || {};
+          accelerometerDataRef.current = { x, y, z };
+        });
+      } catch (accelError) {
+        console.log('Accelerometer açılamadı', accelError);
+      }
+
+      try {
+        Magnetometer.setUpdateInterval(HEADING_UPDATE_MS);
+        magnetSubscription = Magnetometer.addListener((data) => {
+          const rawHeading =
+            computeTiltCompensatedHeading(data, accelerometerDataRef.current) ??
+            (data?.x != null && data?.y != null
+              ? normalizeAngle(radToDeg(Math.atan2(data.x, data.y)))
+              : null);
+
+          if (!Number.isFinite(rawHeading)) {
+            return;
+          }
+
+          lastRawMagHeadingRef.current = rawHeading;
+          const correctedHeading = normalizeAngle(
+            rawHeading + headingDeclinationRef.current
+          );
+          const eased = pushHeadingSample(correctedHeading);
+          if (eased !== null) {
+            setDeviceHeading(eased);
+          }
+        });
+      } catch (error) {
+        console.log('Magnetometre açılamadı, konum heading kullanılacak', error);
+        magnetSubscription = null;
+      }
+
+      if (!magnetSubscription) {
+        accelSubscription?.remove?.();
+        headingSubscriptionRef.current = null;
+        locationHeadingDriveRef.current = true;
+      } else {
+        locationHeadingDriveRef.current = false;
+        headingSubscriptionRef.current = {
+          remove: () => {
+            magnetSubscription?.remove?.();
+            accelSubscription?.remove?.();
+            headingSubscriptionRef.current = null;
+          },
+        };
+      }
+    }
+
+    await ensureLocationHeadingWatcher();
   };
 
   // --- TIMERS ---
@@ -1180,7 +1467,7 @@ export default function App() {
 
   const schedulePrayerNotifications = async (forceEnabledValue = null) => {
     const isEnabled = forceEnabledValue ?? notificationsEnabled;
-    if (!prayerTimes || !isEnabled) return;
+    if (!prayerTimes || !isEnabled || !location?.coords) return;
 
     await Notifications.cancelAllScheduledNotificationsAsync();
 
@@ -1191,32 +1478,46 @@ export default function App() {
       ...(Platform.OS === 'android' ? { channelId } : {}),
     });
 
-    // Güneş vaktini (sunrise) ana ezan bildirimlerinden hariç tutuyoruz.
-    const entries = [
-      { key: 'fajr',    time: prayerTimes.fajr },
-      { key: 'dhuhr',   time: prayerTimes.dhuhr },
-      { key: 'asr',     time: prayerTimes.asr },
-      { key: 'maghrib', time: prayerTimes.maghrib },
-      { key: 'isha',    time: prayerTimes.isha },
-    ];
+    const coords = new Coordinates(
+      location.coords.latitude,
+      location.coords.longitude
+    );
+    const params = CalculationMethod.Turkey();
+
+    const buildEntries = (times, skipPast) =>
+      PRAYER_NOTIFICATION_KEYS.map((key) => ({
+        key,
+        time: times[key],
+      })).filter(
+        ({ time }) =>
+          time instanceof Date && (!skipPast || time > now)
+      );
+
+    const entries = [...buildEntries(prayerTimes, true)];
+
+    // Ertesi günün vakitlerini de planla ki uygulama kapalı olsa bile sabah ezanı çalsın
+    try {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowTimes = new PrayerTimes(coords, tomorrow, params);
+      entries.push(...buildEntries(tomorrowTimes, false));
+    } catch (error) {
+      console.log('Yarın vakitleri hesaplanamadı', error);
+    }
 
     for (const { key, time } of entries) {
-      if (!time) continue;
+      if (!time || !(time instanceof Date)) continue;
 
-      // 1) Vakit girdiği anda EZAN sesli bildirim
-      if (time > now) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: `${PRAYER_NAMES[key]} vakti`,
-            body: `${PRAYER_NAMES[key]} vakti girdi.`,
-            sound: 'ogle.mp3',
-            priority: Notifications.AndroidNotificationPriority.MAX,
-          },
-          trigger: buildDateTrigger(time, 'ezan-channel'),
-        });
-      }
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${PRAYER_NAMES[key]} vakti`,
+          body: `${PRAYER_NAMES[key]} vakti girdi.`,
+          sound: 'ogle.mp3',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+        },
+        trigger: buildDateTrigger(time, 'ezan-channel'),
+      });
 
-      // 2) Her vakitten 10 dk önce ek sessiz hatırlatma (sadece bildirim, ezan sesi yok)
       const tenMinutesBefore = new Date(time.getTime() - 10 * 60 * 1000);
       if (tenMinutesBefore > now) {
         await Notifications.scheduleNotificationAsync({
@@ -1234,8 +1535,8 @@ export default function App() {
 
   // --- QIBLA ANIMATION ---
   useEffect(() => {
-    if (qiblaAngle !== null && deviceHeading !== null) {
-      const diff = getAngleDiff(qiblaAngle, deviceHeading);
+    if (qiblaAngle !== null && adjustedHeading !== null) {
+      const diff = getAngleDiff(qiblaAngle, adjustedHeading);
 
       Animated.spring(rotateAnim, {
         toValue: diff ?? 0,
@@ -1256,20 +1557,29 @@ export default function App() {
 
       arrowPulseAnim.setValue(1);
     }
-  }, [deviceHeading, qiblaAngle]);
+  }, [adjustedHeading, qiblaAngle]);
 
 
   // --- RENDER HELPERS ---
   const formatTime = (date) => date ? format(date, 'HH:mm', { locale: tr }) : '--:--';
   const formatDate = (date) => format(date, 'd MMMM yyyy, EEEE', { locale: tr });
   const formatReligiousDate = (dateString) => format(new Date(dateString), 'd MMMM, EEEE', { locale: tr });
+  const formatShortDate = (date) => format(date, 'd MMM', { locale: tr });
 
-  const qiblaAngleDiff = qiblaAngle !== null ? getAngleDiff(qiblaAngle, deviceHeading ?? 0) : null;
-  const qiblaDiffAbs = qiblaAngleDiff !== null ? Math.abs(qiblaAngleDiff) : null;
+  const qiblaAngleDiff =
+    qiblaAngle !== null && adjustedHeading !== null
+      ? getAngleDiff(qiblaAngle, adjustedHeading)
+      : null;
+  const visualDiff =
+    qiblaAngleDiff !== null
+      ? normalizeDelta(qiblaAngleDiff + NEEDLE_VISUAL_OFFSET)
+      : null;
+  const qiblaDiffAbs = visualDiff !== null ? Math.abs(visualDiff) : null;
   const isQiblaAligned = qiblaDiffAbs !== null && qiblaDiffAbs <= 5;
-  const qiblaDirectionText = qiblaAngleDiff !== null ? (qiblaAngleDiff > 0 ? 'Sağa çevir' : 'Sola çevir') : '';
+  const qiblaDirectionText = visualDiff !== null ? (visualDiff > 0 ? 'Sağa çevir' : 'Sola çevir') : '';
   const qiblaAngleDisplay = qiblaAngle !== null ? `${Math.round(qiblaAngle)}°` : '--°';
-  const deviceHeadingDisplay = deviceHeading !== null ? `${Math.round(deviceHeading)}°` : '--°';
+  const deviceHeadingDisplay =
+    deviceHeadingVisual !== null ? `${Math.round(deviceHeadingVisual)}°` : '--°';
   const qiblaDiffDisplay = qiblaDiffAbs !== null ? `${qiblaDiffAbs.toFixed(0)}°` : '--°';
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -1310,6 +1620,32 @@ export default function App() {
     { label: 'G', style: styles.cardinalSouth },
     { label: 'B', style: styles.cardinalWest },
   ];
+
+  const kaabaMetrics = useMemo(() => {
+    if (!location?.coords) return null;
+    const { latitude, longitude } = location.coords;
+    const distanceKm = haversineDistanceKm(
+      latitude,
+      longitude,
+      KAABA_COORDS.latitude,
+      KAABA_COORDS.longitude
+    );
+    const bearing = initialBearing(
+      latitude,
+      longitude,
+      KAABA_COORDS.latitude,
+      KAABA_COORDS.longitude
+    );
+    return {
+      distanceKm,
+      bearing,
+      latLabel: formatCoordinate(KAABA_COORDS.latitude, 'K', 'G'),
+      lonLabel: formatCoordinate(KAABA_COORDS.longitude, 'D', 'B'),
+    };
+  }, [location]);
+
+  const kaabaDistanceDisplay = kaabaMetrics ? formatDistanceKm(kaabaMetrics.distanceKm) : '--';
+  const kaabaBearingDisplay = kaabaMetrics ? `${Math.round(kaabaMetrics.bearing)}°` : '--°';
 
 
   // --- SPLASH SCREEN RENDER ---
@@ -1659,10 +1995,10 @@ export default function App() {
             </View>
 
             <View style={styles.compassWrapper}>
-              <View style={[
-                styles.compassGlow,
-                isQiblaAligned && styles.compassGlowAligned
-              ]} />
+                <View style={[
+                  styles.compassGlow,
+                  isQiblaAligned && styles.compassGlowAligned
+                ]} />
               <View style={[
                 styles.compassCircle,
                 isQiblaAligned && styles.compassCircleAligned
@@ -1673,6 +2009,7 @@ export default function App() {
                   </Text>
                 ))}
 
+                {isQiblaAligned && <View style={styles.compassAlignedFill} />}
                 {Array.from({ length: 12 }).map((_, index) => (
                   <View key={`tick-${index}`} style={[styles.tickWrapper, { transform: [{ rotate: `${index * 30}deg` }] }]}>
                     <View style={styles.tick} />
@@ -1694,6 +2031,7 @@ export default function App() {
                     {
                       transform: [
                         { rotate: rotateAnim.interpolate({ inputRange: [-180, 180], outputRange: ['-180deg', '180deg'] }) },
+                        { rotate: needleVisualRotation },
                         { scale: arrowPulseAnim },
                       ],
                     },
@@ -1702,6 +2040,12 @@ export default function App() {
                   <View style={styles.qiblaNeedleStem} />
                   <View style={styles.qiblaNeedleHead} />
                 </Animated.View>
+
+                {kaabaMetrics && (
+                  <View style={styles.kaabaTipIcon}>
+                    <Ionicons name="cube" size={14} color="#B91C1C" />
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1719,6 +2063,35 @@ export default function App() {
                 <Text style={[styles.infoValue, isQiblaAligned && styles.infoValueAligned]}>{qiblaDiffDisplay}</Text>
               </View>
             </View>
+          {kaabaMetrics && (
+            <View style={styles.kaabaInfoBlock}>
+              <View style={styles.kaabaInfoHeader}>
+                <Ionicons name="cube" size={18} color="#22d3ee" />
+                <Text style={styles.kaabaInfoTitle}>Kâbe Konumu</Text>
+              </View>
+              <Text style={styles.kaabaInfoLead}>Mekke, Suudi Arabistan</Text>
+              <View style={styles.kaabaInfoTags}>
+                <View style={styles.kaabaPill}>
+                  <Ionicons name="trending-up" size={14} color="#0f172a" />
+                  <Text style={styles.kaabaPillText}>{kaabaDistanceDisplay} uzaklıkta</Text>
+                </View>
+                <View style={styles.kaabaPill}>
+                  <Ionicons name="navigate" size={14} color="#0f172a" />
+                  <Text style={styles.kaabaPillText}>{kaabaBearingDisplay} istikamet</Text>
+                </View>
+              </View>
+              <View style={styles.kaabaMetaRow}>
+                <View style={styles.kaabaMetaItem}>
+                  <Text style={styles.kaabaMetaLabel}>Enlem</Text>
+                  <Text style={styles.kaabaMetaValue}>{kaabaMetrics.latLabel}</Text>
+                </View>
+                <View style={styles.kaabaMetaItem}>
+                  <Text style={styles.kaabaMetaLabel}>Boylam</Text>
+                  <Text style={styles.kaabaMetaValue}>{kaabaMetrics.lonLabel}</Text>
+                </View>
+              </View>
+            </View>
+          )}
           </View>
         )}
 
@@ -1739,7 +2112,7 @@ export default function App() {
         </View>
       </ScrollView>
 
-      {/* Dini Günler Modal */}
+      {/* Takvim Modal */}
       <Modal
         visible={calendarModalVisible}
         transparent={true}
@@ -1749,7 +2122,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.calendarModal]}>
             <View style={styles.calendarModalHeader}>
-              <Text style={styles.modalTitle}>Dini Günler</Text>
+              <Text style={styles.modalTitle}>Takvim</Text>
               <TouchableOpacity
                 style={styles.modalCloseIcon}
                 onPress={() => setCalendarModalVisible(false)}
@@ -1757,62 +2130,177 @@ export default function App() {
                 <Ionicons name="close" size={22} color="#111827" />
               </TouchableOpacity>
             </View>
-            <ScrollView
-              style={styles.calendarList}
-              contentContainerStyle={styles.calendarListContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {RELIGIOUS_DAYS.map((item, index) => {
-                const showYearLabel = index === 0 || RELIGIOUS_DAYS[index - 1].year !== item.year;
-                const dateObj = new Date(item.date);
-                const isUpcoming = upcomingReligiousDay && upcomingReligiousDay.date === item.date;
-                const isPast = dateObj < todayStart;
-                return (
-                  <View key={`${item.date}-${item.name}`}>
-                    {showYearLabel && (
-                      <Text style={styles.calendarYearLabel}>{item.year}</Text>
-                    )}
-                    <View
-                      style={[
-                        styles.calendarCard,
-                        isUpcoming && styles.calendarCardUpcoming,
-                        isPast && styles.calendarCardPast,
-                      ]}
-                    >
-                      <View>
-                        <Text
-                          style={[
-                            styles.calendarName,
-                            isPast && styles.calendarTextPast,
-                          ]}
-                        >
-                          {item.name}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.calendarDate,
-                            isPast && styles.calendarTextPast,
-                          ]}
-                        >
-                          {formatReligiousDate(item.date)}
-                        </Text>
-                      </View>
-                      {isUpcoming && (
-                        <View style={styles.upcomingBadge}>
-                          <Ionicons
-                            name="leaf"
-                            size={14}
-                            color="#15803D"
-                            style={styles.upcomingBadgeIcon}
-                          />
-                          <Text style={styles.upcomingBadgeText}>Yaklaşıyor</Text>
-                        </View>
-                      )}
-                    </View>
+            <View style={styles.calendarTabBar}>
+              <TouchableOpacity
+                style={[
+                  styles.calendarTab,
+                  calendarTab === 'imsakiye' && styles.calendarTabActive,
+                ]}
+                onPress={() => setCalendarTab('imsakiye')}
+              >
+                <Text
+                  style={[
+                    styles.calendarTabText,
+                    calendarTab === 'imsakiye' && styles.calendarTabTextActive,
+                  ]}
+                >
+                  İmsakiye
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.calendarTab,
+                  calendarTab === 'religious' && styles.calendarTabActive,
+                ]}
+                onPress={() => setCalendarTab('religious')}
+              >
+                <Text
+                  style={[
+                    styles.calendarTabText,
+                    calendarTab === 'religious' && styles.calendarTabTextActive,
+                  ]}
+                >
+                  Dini Günler
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {calendarTab === 'imsakiye' ? (
+              <ScrollView
+                style={styles.imsakiyeScroll}
+                contentContainerStyle={styles.imsakiyeScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {imsakiyeData.length === 0 ? (
+                  <View style={styles.imsakiyeEmpty}>
+                    <Text style={styles.imsakiyeEmptyText}>
+                      Konum doğrulandığında 30 günlük imsakiye burada listelenir.
+                    </Text>
                   </View>
-                );
-              })}
-            </ScrollView>
+                ) : (
+                  <View style={styles.imsakiyeWrapper}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.imsakiyeTableScroll}
+                    >
+                      <View style={styles.imsakiyeTable}>
+                        <View style={styles.imsakiyeHeaderRow}>
+                          {IMSAKIYE_COLUMNS.map((column) => (
+                            <Text
+                              key={column.key}
+                              style={[
+                                styles.imsakiyeCell,
+                                styles.imsakiyeHeaderCell,
+                                { width: column.width },
+                              ]}
+                            >
+                              {column.label}
+                            </Text>
+                          ))}
+                        </View>
+                        {imsakiyeData.map((entry, rowIndex) => {
+                          const rowDate = new Date(entry.date);
+                          rowDate.setHours(0, 0, 0, 0);
+                          const isTodayRow = rowDate.getTime() === todayReferenceKey;
+                          const values = {
+                            date: formatShortDate(entry.date),
+                            fajr: formatTime(entry.fajr),
+                            sunrise: formatTime(entry.sunrise),
+                            dhuhr: formatTime(entry.dhuhr),
+                            asr: formatTime(entry.asr),
+                            maghrib: formatTime(entry.maghrib),
+                            isha: formatTime(entry.isha),
+                          };
+                          return (
+                            <View
+                              key={entry.date.toISOString()}
+                              style={[
+                                styles.imsakiyeRow,
+                                rowIndex % 2 === 1 && styles.imsakiyeRowAlt,
+                                isTodayRow && styles.imsakiyeRowToday,
+                              ]}
+                            >
+                              {IMSAKIYE_COLUMNS.map((column) => (
+                                <Text
+                                  key={column.key}
+                                  style={[
+                                    styles.imsakiyeCell,
+                                    styles.imsakiyeCellText,
+                                    column.key === 'date' && styles.imsakiyeCellDate,
+                                    isTodayRow && styles.imsakiyeCellToday,
+                                    { width: column.width },
+                                  ]}
+                                >
+                                  {values[column.key]}
+                                </Text>
+                              ))}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </ScrollView>
+                  </View>
+                )}
+              </ScrollView>
+            ) : (
+              <ScrollView
+                style={styles.calendarList}
+                contentContainerStyle={styles.calendarListContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {RELIGIOUS_DAYS.map((item, index) => {
+                  const showYearLabel = index === 0 || RELIGIOUS_DAYS[index - 1].year !== item.year;
+                  const dateObj = new Date(item.date);
+                  const isUpcoming = upcomingReligiousDay && upcomingReligiousDay.date === item.date;
+                  const isPast = dateObj < todayStart;
+                  return (
+                    <View key={`${item.date}-${item.name}`}>
+                      {showYearLabel && (
+                        <Text style={styles.calendarYearLabel}>{item.year}</Text>
+                      )}
+                      <View
+                        style={[
+                          styles.calendarCard,
+                          isUpcoming && styles.calendarCardUpcoming,
+                          isPast && styles.calendarCardPast,
+                        ]}
+                      >
+                        <View>
+                          <Text
+                            style={[
+                              styles.calendarName,
+                              isPast && styles.calendarTextPast,
+                            ]}
+                          >
+                            {item.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.calendarDate,
+                              isPast && styles.calendarTextPast,
+                            ]}
+                          >
+                            {formatReligiousDate(item.date)}
+                          </Text>
+                        </View>
+                        {isUpcoming && (
+                          <View style={styles.upcomingBadge}>
+                            <Ionicons
+                              name="leaf"
+                              size={14}
+                              color="#15803D"
+                              style={styles.upcomingBadgeIcon}
+                            />
+                            <Text style={styles.upcomingBadgeText}>Yaklaşıyor</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>
@@ -2587,6 +3075,20 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 6,
   },
+  compassAlignedFill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    bottom: 12,
+    borderRadius: 98,
+    backgroundColor: 'rgba(34,197,94,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.5)',
+    shadowColor: '#22C55E',
+    shadowOpacity: 0.35,
+    shadowRadius: 15,
+  },
   innerRing: {
     position: 'absolute',
     width: 160,
@@ -2650,6 +3152,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.25)',
     marginTop: 10,
   },
+  kaabaTipIcon: {
+    position: 'absolute',
+    top: 18,
+    alignSelf: 'center',
+    backgroundColor: '#FEF9C3',
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 0.5,
+    borderColor: '#0f172a',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   qiblaNeedleWrapper: {
     position: 'absolute',
     alignItems: 'center',
@@ -2698,6 +3214,69 @@ const styles = StyleSheet.create({
   },
   infoValueAligned: {
     color: '#34D399',
+  },
+  kaabaInfoBlock: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  kaabaInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  kaabaInfoTitle: {
+    marginLeft: 8,
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  kaabaInfoLead: {
+    marginTop: 6,
+    color: 'rgba(248,250,252,0.7)',
+    fontSize: 13,
+  },
+  kaabaInfoTags: {
+    flexDirection: 'row',
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  kaabaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#d9f99d',
+    marginRight: 8,
+    marginBottom: 6,
+  },
+  kaabaPillText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  kaabaMetaRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  kaabaMetaItem: {
+    flex: 1,
+  },
+  kaabaMetaLabel: {
+    fontSize: 11,
+    color: 'rgba(248,250,252,0.55)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  kaabaMetaValue: {
+    marginTop: 4,
+    fontSize: 15,
+    color: '#F8FAFC',
+    fontWeight: '600',
   },
   focusGrid: {
     marginBottom: 60,
@@ -2906,6 +3485,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
   },
+  calendarTabBar: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(15,23,42,0.05)',
+    borderRadius: 999,
+    padding: 4,
+    marginBottom: 16,
+  },
+  calendarTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  calendarTabActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  calendarTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    letterSpacing: 0.4,
+  },
+  calendarTabTextActive: {
+    color: '#065F46',
+  },
   modalCloseIcon: {
     padding: 6,
     borderRadius: 999,
@@ -2916,6 +3520,87 @@ const styles = StyleSheet.create({
   },
   calendarListContent: {
     paddingBottom: 10,
+  },
+  imsakiyeScroll: {
+    flexGrow: 0,
+    maxHeight: 420,
+  },
+  imsakiyeScrollContent: {
+    paddingBottom: 12,
+  },
+  imsakiyeWrapper: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    overflow: 'hidden',
+  },
+  imsakiyeTableScroll: {
+    minWidth: 560,
+  },
+  imsakiyeTable: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.08)',
+    overflow: 'hidden',
+  },
+  imsakiyeHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#022c22',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  imsakiyeRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(248,250,252,0.96)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(226,232,240,0.6)',
+  },
+  imsakiyeRowAlt: {
+    backgroundColor: 'rgba(241,245,249,0.9)',
+  },
+  imsakiyeRowToday: {
+    backgroundColor: '#DCFCE7',
+  },
+  imsakiyeCell: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    textAlign: 'center',
+  },
+  imsakiyeHeaderCell: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    fontSize: 12,
+    textTransform: 'uppercase',
+  },
+  imsakiyeCellText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#0F172A',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  imsakiyeCellDate: {
+    flex: 1.1,
+    fontWeight: '700',
+  },
+  imsakiyeCellToday: {
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  imsakiyeEmpty: {
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: 'rgba(248,250,252,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.3)',
+  },
+  imsakiyeEmptyText: {
+    textAlign: 'center',
+    color: '#475569',
+    fontSize: 14,
+    lineHeight: 20,
   },
   calendarYearLabel: {
     fontSize: 13,
