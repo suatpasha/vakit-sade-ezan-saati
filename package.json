@@ -1,6 +1,6 @@
 {
   "name": "vakit-sade-ezan-saati",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -9,7 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/geolocation": "^3.4.0",
     "adhan": "^4.4.3",
     "date-fns": "^4.1.0",
@@ -19,12 +19,15 @@
     "expo-build-properties": "~1.0.9",
     "expo-haptics": "~15.0.8",
     "expo-linear-gradient": "~15.0.7",
+    "expo-localization": "~17.0.8",
     "expo-location": "^19.0.7",
     "expo-notifications": "^0.32.13",
     "expo-sensors": "~15.0.7",
     "expo-status-bar": "~3.0.8",
+    "i18next": "^25.7.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-i18next": "^16.4.0",
     "react-native": "0.81.5",
     "react-native-google-mobile-ads": "^16.0.0",
     "react-native-web": "^0.21.0"

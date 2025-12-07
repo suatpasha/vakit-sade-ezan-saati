@@ -2,25 +2,23 @@
   "expo": {
     "name": "Vakit",
     "slug": "vakit-sade-ezan-saati",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#FAFAFA"
     },
-
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.suatp.vakitezansaati"
+      "bundleIdentifier": "com.suatp.vakitezansaati",
+      "buildNumber": "6"
     },
-
     "android": {
-      "versionCode": 5,
+      "versionCode": 6,
       "useNextNotificationsApi": true,
       "package": "com.suatp.vakitezansaati",
       "permissions": [
@@ -29,14 +27,15 @@
         "FOREGROUND_SERVICE"
       ]
     },
-
     "plugins": [
       [
         "expo-notifications",
         {
           "icon": "./assets/logo.png",
           "color": "#10B981",
-          "sounds": ["./assets/sounds/ogle.mp3"],
+          "sounds": [
+            "./assets/sounds/ogle.mp3"
+          ],
           "mode": "production",
           "android": {
             "notificationChannelId": "ezan-channel",
@@ -47,7 +46,6 @@
           }
         }
       ],
-
       "expo-location",
       [
         "react-native-google-mobile-ads",
@@ -55,9 +53,9 @@
           "androidAppId": "ca-app-pub-6300495112628329~8677481654",
           "iosAppId": "ca-app-pub-6300495112628329~3264954986"
         }
-      ]
+      ],
+      "expo-localization"
     ],
-
     "extra": {
       "eas": {
         "projectId": "87f7aeae-185b-4b61-94df-bb4733892726"

@@ -23,7 +23,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
 import { PrayerTimes, Coordinates, CalculationMethod, Qibla } from 'adhan';
 import { format } from 'date-fns';
-import { tr } from 'date-fns/locale';
+import { tr, enUS } from 'date-fns/locale';
 import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +31,8 @@ import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from 'react-i18next';
+import './src/i18n/i18n';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
 const adUnitId = __DEV__ 
@@ -40,14 +42,14 @@ const adUnitId = __DEV__
       android: 'ca-app-pub-6300495112628329/1128511738',
     });
 
-const PRAYER_NAMES = {
-  fajr: 'İmsak',
-  sunrise: 'Güneş',
-  dhuhr: 'Öğle',
-  asr: 'İkindi',
-  maghrib: 'Akşam',
-  isha: 'Yatsı'
-};
+// const PRAYER_NAMES = {
+//   fajr: 'İmsak',
+//   sunrise: 'Güneş',
+//   dhuhr: 'Öğle',
+//   asr: 'İkindi',
+//   maghrib: 'Akşam',
+//   isha: 'Yatsı'
+// };
 
 const PRAYER_ORDER = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'];
 const PRAYER_NOTIFICATION_KEYS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
@@ -58,15 +60,7 @@ const DECLINATION_SMOOTHING_FACTOR = 0.25;
 const HEADING_COMPASS_OFFSET = 0;
 const NEEDLE_VISUAL_OFFSET = 90; // degrees clockwise adjustment for artwork
 const IMSAKIYE_DAYS = 30;
-const IMSAKIYE_COLUMNS = [
-  { key: 'date', label: 'Tarih', width: 86 },
-  { key: 'fajr', label: 'İmsak', width: 74 },
-  { key: 'sunrise', label: 'Güneş', width: 74 },
-  { key: 'dhuhr', label: 'Öğle', width: 74 },
-  { key: 'asr', label: 'İkindi', width: 74 },
-  { key: 'maghrib', label: 'Akşam', width: 74 },
-  { key: 'isha', label: 'Yatsı', width: 74 },
-];
+// const IMSAKIYE_COLUMNS = ... (Component içine taşındı)
 const KAABA_COORDS = { latitude: 21.4225, longitude: 39.8262 };
 const EARTH_RADIUS_KM = 6371;
 const degToRad = (deg) => (deg * Math.PI) / 180;
@@ -192,80 +186,13 @@ const SOUND_FILES = {
   isha: require('./assets/sounds/yatsi.mp3'),
 };
 
-const RELIGIOUS_DAYS = [
-  { year: 2026, date: '2026-01-15', name: 'Miraç Kandili' },
-  { year: 2026, date: '2026-02-02', name: 'Berat Kandili' },
-  { year: 2026, date: '2026-02-18', name: 'Ramazan Başlangıcı' },
-  { year: 2026, date: '2026-03-15', name: 'Kadir Gecesi' },
-  { year: 2026, date: '2026-03-20', name: 'Ramazan Bayramı (1. Gün)' },
-  { year: 2026, date: '2026-05-27', name: 'Kurban Bayramı (1. Gün)' },
-  { year: 2026, date: '2026-06-17', name: 'Hicri Yılbaşı' },
-  { year: 2026, date: '2026-06-26', name: 'Aşure Günü' },
-  { year: 2026, date: '2026-10-21', name: 'Mevlid Kandili' },
-  { year: 2027, date: '2027-01-05', name: 'Miraç Kandili' },
-  { year: 2027, date: '2027-01-22', name: 'Berat Kandili' },
-  { year: 2027, date: '2027-02-08', name: 'Ramazan Başlangıcı' },
-  { year: 2027, date: '2027-03-05', name: 'Kadir Gecesi' },
-  { year: 2027, date: '2027-03-09', name: 'Ramazan Bayramı (1. Gün)' },
-  { year: 2027, date: '2027-05-16', name: 'Kurban Bayramı (1. Gün)' },
-  { year: 2027, date: '2027-06-07', name: 'Hicri Yılbaşı' },
-  { year: 2027, date: '2027-06-16', name: 'Aşure Günü' },
-  { year: 2027, date: '2027-10-10', name: 'Mevlid Kandili' },
-];
+// const RELIGIOUS_DAYS = ... (Component içine taşındı)
 
-const FOCUS_REFLECTIONS = [
-  {
-    title: 'Vakit Bilinci',
-    body: 'Her vakit, gününüzü yeniden şekillendirmek için verilen küçük bir fırsattır.',
-  },
-  {
-    title: 'Sükûnet',
-    body: 'Kıbleyi bulurken kalbiniz de yönünü bulsun; niyetiniz pusulanız olsun.',
-  },
-  {
-    title: 'Şükür',
-    body: 'Vakitlerin düzeni, hayatın içindeki rahmetin ritmini fısıldar.',
-  },
-  {
-    title: 'Hazırlık',
-    body: 'Ezan henüz duyulmadıysa bile kalbinizi vakte hazırlamak sizde.',
-  },
-];
+// const FOCUS_REFLECTIONS = ... (Component içine taşındı)
 
 const HERO_GRADIENT = ['#010817', '#031126', '#0B1831', '#0f172a'];
 
-const ZIKR_GOALS = [
-  {
-    key: 'morningTasbih',
-    label: 'Sabah Tesbihatı',
-    period: 'Günlük',
-    target: 33,
-    unit: 'tesbih',
-    suggestion: 'Subhanallah, Elhamdulillah, Allahu Ekber tesbihatını 33’er defa tekrar edin.',
-    reminder: 'İmsak sonrası 5 dakikalık sessiz bir alan oluşturun.',
-    color: '#38bdf8',
-  },
-  {
-    key: 'salawat',
-    label: 'Salavat Zinciri',
-    period: 'Günlük',
-    target: 50,
-    unit: 'salavat',
-    suggestion: '“Allahümme salli ala Seyyidina Muhammed” ile gönlünüzü yumuşatın.',
-    reminder: 'Öğle ve ikindi arası kısa molalarda 10’ar tekrar hedefleyin.',
-    color: '#f472b6',
-  },
-  {
-    key: 'weeklyYasin',
-    label: 'Haftalık Yasin',
-    period: 'Haftalık',
-    target: 1,
-    unit: 'hatim',
-    suggestion: 'Hafta boyunca parçalara bölüp Yasin-i Şerif’i tamamlayın.',
-    reminder: 'Cumartesi sabahı veya Perşembe akşamı sessiz bir zaman belirleyin.',
-    color: '#34d399',
-  },
-];
+// const ZIKR_GOALS = ... (Component içine taşındı)
 
 const YASIN_TEXT = String.raw`Yasin Suresi (1-12. Ayetler)
 
@@ -812,6 +739,87 @@ Notifications.setNotificationHandler({
 });
 
 export default function App() {
+  const { t, i18n } = useTranslation();
+
+  const PRAYER_NAMES = useMemo(() => ({
+    fajr: t('prayer.fajr'),
+    sunrise: t('prayer.sunrise'),
+    dhuhr: t('prayer.dhuhr'),
+    asr: t('prayer.asr'),
+    maghrib: t('prayer.maghrib'),
+    isha: t('prayer.isha')
+  }), [t]);
+
+  const ZIKR_GOALS = useMemo(() => [
+    {
+      key: 'morningTasbih',
+      label: t('zikr.goals.tesbih.label'),
+      period: 'Günlük',
+      target: 33,
+      unit: 'tesbih',
+      suggestion: t('zikr.goals.tesbih.suggestion'),
+      reminder: t('zikr.goals.tesbih.reminder'),
+      color: '#38bdf8',
+    },
+    {
+      key: 'salawat',
+      label: t('zikr.goals.salawat.label'),
+      period: 'Günlük',
+      target: 50,
+      unit: 'salawat',
+      suggestion: t('zikr.goals.salawat.suggestion'),
+      reminder: t('zikr.goals.salawat.reminder'),
+      color: '#f472b6',
+    },
+    {
+      key: 'weeklyYasin',
+      label: t('zikr.goals.hatim.label'),
+      period: 'Haftalık',
+      target: 1,
+      unit: 'hatim',
+      suggestion: t('zikr.goals.hatim.suggestion'),
+      reminder: t('zikr.goals.hatim.reminder'),
+      color: '#34d399',
+    },
+  ], [t]);
+
+  const FOCUS_REFLECTIONS = useMemo(() => {
+    const reflections = t('home.reflections', { returnObjects: true });
+    // Eğer dizi değilse (çeviri yüklenmediyse) boş dizi veya varsayılan döndür
+    return Array.isArray(reflections) ? reflections : [];
+  }, [t, FOCUS_REFLECTIONS]); // FOCUS_REFLECTIONS'ı burada değil yukarıda kullanıyorum, burada t yeterli
+
+  const IMSAKIYE_COLUMNS = useMemo(() => [
+    { key: 'date', label: t('calendar.colDate'), width: 86 },
+    { key: 'fajr', label: t('prayer.fajr'), width: 74 },
+    { key: 'sunrise', label: t('prayer.sunrise'), width: 74 },
+    { key: 'dhuhr', label: t('prayer.dhuhr'), width: 74 },
+    { key: 'asr', label: t('prayer.asr'), width: 74 },
+    { key: 'maghrib', label: t('prayer.maghrib'), width: 74 },
+    { key: 'isha', label: t('prayer.isha'), width: 74 },
+  ], [t]);
+
+  const RELIGIOUS_DAYS = useMemo(() => [
+    { year: 2026, date: '2026-01-15', name: t('calendar.religiousDays.mirac') },
+    { year: 2026, date: '2026-02-02', name: t('calendar.religiousDays.berat') },
+    { year: 2026, date: '2026-02-18', name: t('calendar.religiousDays.ramadanStart') },
+    { year: 2026, date: '2026-03-15', name: t('calendar.religiousDays.kadir') },
+    { year: 2026, date: '2026-03-20', name: t('calendar.religiousDays.ramadanEid1') },
+    { year: 2026, date: '2026-05-27', name: t('calendar.religiousDays.eidAlAdha1') },
+    { year: 2026, date: '2026-06-17', name: t('calendar.religiousDays.hijriNewYear') },
+    { year: 2026, date: '2026-06-26', name: t('calendar.religiousDays.ashura') },
+    { year: 2026, date: '2026-10-21', name: t('calendar.religiousDays.mevlid') },
+    { year: 2027, date: '2027-01-05', name: t('calendar.religiousDays.mirac') },
+    { year: 2027, date: '2027-01-22', name: t('calendar.religiousDays.berat') },
+    { year: 2027, date: '2027-02-08', name: t('calendar.religiousDays.ramadanStart') },
+    { year: 2027, date: '2027-03-05', name: t('calendar.religiousDays.kadir') },
+    { year: 2027, date: '2027-03-09', name: t('calendar.religiousDays.ramadanEid1') },
+    { year: 2027, date: '2027-05-16', name: t('calendar.religiousDays.eidAlAdha1') },
+    { year: 2027, date: '2027-06-07', name: t('calendar.religiousDays.hijriNewYear') },
+    { year: 2027, date: '2027-06-16', name: t('calendar.religiousDays.ashura') },
+    { year: 2027, date: '2027-10-10', name: t('calendar.religiousDays.mevlid') },
+  ], [t]);
+
   // --- STATE TANIMLARI ---
   const [location, setLocation] = useState(null);
   const [locationLabel, setLocationLabel] = useState('Konum belirleniyor...');
@@ -1462,10 +1470,10 @@ export default function App() {
 
     if (value) {
       await schedulePrayerNotifications(true);
-      Alert.alert('Bilgi', 'Bildirimler tekrar açıldı.');
+      Alert.alert(t('common.info'), t('common.notificationsEnabled'));
     } else {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      Alert.alert('Bilgi', 'Ezan bildirimleri kapatıldı.');
+      Alert.alert(t('common.info'), t('common.notificationsDisabled'));
     }
   };
 
@@ -1571,10 +1579,12 @@ export default function App() {
 
 
   // --- RENDER HELPERS ---
-  const formatTime = (date) => date ? format(date, 'HH:mm', { locale: tr }) : '--:--';
-  const formatDate = (date) => format(date, 'd MMMM yyyy, EEEE', { locale: tr });
-  const formatReligiousDate = (dateString) => format(new Date(dateString), 'd MMMM, EEEE', { locale: tr });
-  const formatShortDate = (date) => format(date, 'd MMM', { locale: tr });
+  const currentLocale = i18n.language === 'en' ? enUS : tr;
+
+  const formatTime = (date) => date ? format(date, 'HH:mm', { locale: currentLocale }) : '--:--';
+  const formatDate = (date) => format(date, 'd MMMM yyyy, EEEE', { locale: currentLocale });
+  const formatReligiousDate = (dateString) => format(new Date(dateString), 'd MMMM, EEEE', { locale: currentLocale });
+  const formatShortDate = (date) => format(date, 'd MMM', { locale: currentLocale });
 
   const qiblaAngleDiff =
     qiblaAngle !== null && adjustedHeading !== null
@@ -1595,9 +1605,12 @@ export default function App() {
   todayStart.setHours(0, 0, 0, 0);
   const upcomingReligiousDay = RELIGIOUS_DAYS.find((day) => new Date(day.date) >= todayStart);
   const focusReflection = useMemo(() => {
+    if (!FOCUS_REFLECTIONS || FOCUS_REFLECTIONS.length === 0) {
+      return { title: '', body: '' };
+    }
     const index = new Date().getDate() % FOCUS_REFLECTIONS.length;
     return FOCUS_REFLECTIONS[index];
-  }, []);
+  }, [FOCUS_REFLECTIONS]);
   const prayerProgress = useMemo(() => {
     if (!currentPrayer?.time || !nextPrayer?.time) return 0;
     const nowTs = Date.now();
@@ -1619,10 +1632,10 @@ export default function App() {
   }, [currentPrayer, nextPrayer, timeRemaining]);
   const prayerProgressDisplay = `${Math.round(prayerProgress * 100)}%`;
   const directionMessage = isQiblaAligned
-    ? 'Kıbleye hizalandınız'
-    : qiblaDirectionText
-      ? (qiblaDirectionText === 'Sağa çevir' ? 'Biraz sağa çevirin' : 'Biraz sola çevirin')
-      : 'Veri bekleniyor';
+    ? t('home.qiblaAligned')
+    : visualDiff !== null
+      ? (visualDiff > 0 ? t('home.turnRight') : t('home.turnLeft'))
+      : t('home.waitingData');
 
   const cardinalPoints = [
     { label: 'K', style: styles.cardinalNorth },
@@ -1675,9 +1688,9 @@ export default function App() {
                   <Text style={styles.splashText}>Vakit</Text>
                   <View style={styles.splashQuoteCard}>
                     <Text style={styles.splashQuote}>
-                      “Namaz, müminlere vakitli olarak farz kılınmıştır.”
+                      {t('common.splashQuote')}
                     </Text>
-                    <Text style={styles.splashQuoteRef}>(Nisa, 103)</Text>
+                    <Text style={styles.splashQuoteRef}>{t('common.splashQuoteRef')}</Text>
                   </View>
               </Animated.View>
           </View>
@@ -1695,7 +1708,7 @@ export default function App() {
         <View style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View>
-              <Text style={styles.heroChip}>Konum</Text>
+              <Text style={styles.heroChip}>{t('home.location')}</Text>
               <Text style={styles.heroLocation}>{locationLabel}</Text>
               <Text style={styles.heroDate}>{formatDate(new Date())}</Text>
             </View>
@@ -1704,9 +1717,9 @@ export default function App() {
 
           <View style={styles.heroCountdownRow}>
             <View>
-              <Text style={styles.heroCountdownLabel}>Sonraki Vakit</Text>
+              <Text style={styles.heroCountdownLabel}>{t('prayer.nextPrayer')}</Text>
               <Text style={styles.heroCountdownPrayer}>
-                {nextPrayer ? PRAYER_NAMES[nextPrayer.name] : 'Hazırlan'}
+                {nextPrayer ? PRAYER_NAMES[nextPrayer.name] : t('prayer.prepare')}
               </Text>
             </View>
             <View style={styles.heroCountdownTime}>
@@ -1725,7 +1738,7 @@ export default function App() {
                     {timeRemaining ? timeRemaining[unit].toString().padStart(2, '0') : '--'}
                   </Text>
                   <Text style={styles.heroTimerLabel}>
-                    {unit === 'hours' ? 'SAAT' : unit === 'minutes' ? 'DAKİKA' : 'SANİYE'}
+                    {unit === 'hours' ? t('prayer.timeLeft.hours') : unit === 'minutes' ? t('prayer.timeLeft.minutes') : t('prayer.timeLeft.seconds')}
                   </Text>
                 </View>
                 {index < 2 && <Text style={styles.heroTimerDot}>:</Text>}
@@ -1754,19 +1767,19 @@ export default function App() {
                 color="#F0FDFA"
               />
               <Text style={styles.heroBadgeText}>
-                {notificationsEnabled ? 'Bildirimler açık' : 'Bildirimler kapalı'}
+                {notificationsEnabled ? t('home.notificationsOn') : t('home.notificationsOff')}
               </Text>
             </View>
           </View>
 
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextCol}>
-              <Text style={styles.toggleTitle}>Ezan Bildirimleri</Text>
+              <Text style={styles.toggleTitle}>{t('home.notificationToggleTitle')}</Text>
               <Text style={styles.toggleSubtitle}>
-                {notificationsEnabled ? 'Vakit girince ezan sesi çalar' : 'Bildirimler kapalı'}
+                {notificationsEnabled ? t('home.notificationToggleSubtitle') : t('home.notificationsOff')}
               </Text>
               {!notificationsPrefLoaded && (
-                <Text style={styles.toggleHelper}>Tercihler yükleniyor...</Text>
+                <Text style={styles.toggleHelper}>{t('common.loading')}</Text>
               )}
             </View>
             <Switch
@@ -1778,35 +1791,61 @@ export default function App() {
               ios_backgroundColor="#1F2937"
             />
           </View>
+
+          <View style={[styles.toggleRow, { marginTop: 12 }]}>
+            <View style={styles.toggleTextCol}>
+              <Text style={styles.toggleTitle}>{t('settings.changeLanguage')}</Text>
+              <Text style={styles.toggleSubtitle}>
+                {i18n.language === 'tr' ? 'Türkçe' : 'English'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                const newLang = i18n.language === 'tr' ? 'en' : 'tr';
+                i18n.changeLanguage(newLang);
+                AsyncStorage.setItem('user-language', newLang);
+              }}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                backgroundColor: '#34D399',
+                borderRadius: 999,
+              }}
+            >
+              <Text style={{ color: '#064e3b', fontWeight: '600' }}>
+                {i18n.language === 'tr' ? 'EN' : 'TR'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.insightRow}>
           <View style={styles.insightCard}>
             <View style={styles.insightBadge}>
               <Ionicons name="calendar" size={16} color="#A7F3D0" />
-              <Text style={styles.insightBadgeText}>Dini Gün</Text>
+              <Text style={styles.insightBadgeText}>{t('home.religiousDay')}</Text>
             </View>
             <Text style={styles.insightText}>
-              {upcomingReligiousDay ? upcomingReligiousDay.name : 'Takvim güncel'}
+              {upcomingReligiousDay ? upcomingReligiousDay.name : t('home.calendarUpdated')}
             </Text>
             <Text style={styles.insightMeta}>
               {upcomingReligiousDay
                 ? formatReligiousDate(upcomingReligiousDay.date)
-                : 'Yaklaşan özel gün bulunmuyor'}
+                : t('home.noUpcomingDay')}
             </Text>
             <TouchableOpacity
               style={styles.smallButton}
               onPress={() => setCalendarModalVisible(true)}
             >
-              <Text style={styles.smallButtonText}>Takvimi aç</Text>
+              <Text style={styles.smallButtonText}>{t('home.openCalendar')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Günün Vakitleri</Text>
+          <Text style={styles.sectionTitle}>{t('home.prayerTimesTitle')}</Text>
           <Text style={styles.sectionSubtitle}>
-            Uzun basarak rekat detaylarını görün, dokunarak ezanı dinleyin.
+            {t('home.prayerTimesSubtitle')}
           </Text>
         </View>
 
@@ -1825,20 +1864,20 @@ export default function App() {
             }[key] || { icon: 'time-outline', color: '#e5e7eb', bg: 'rgba(148,163,184,0.2)' };
             const metaText =
               key === 'sunrise'
-                ? 'Kerahat vaktinde ezan okunmaz'
+                ? t('prayer.meta.kerahat')
                 : isActive
-                  ? 'Vakit içindesiniz'
+                  ? t('prayer.meta.current')
                   : key === 'fajr'
-                    ? 'Rızık ve Bereketin Dağıtıldığı Vakit'
+                    ? t('prayer.meta.fajr')
                     : key === 'dhuhr'
-                      ? 'Gök Kapılarının Açıldığı Rahmet Vakti'
+                      ? t('prayer.meta.dhuhr')
                       : key === 'asr'
-                        ? 'Amellerin Arz Edildiği ve Korunma Vakti'
+                        ? t('prayer.meta.asr')
                         : key === 'maghrib'
-                          ? 'Tövbenin Kabulü ve Vuslat Vakti'
+                          ? t('prayer.meta.maghrib')
                           : key === 'isha'
-                            ? 'Rabb ile Baş Başa Kalma (Halvet) Vakti'
-                            : 'Hazırlık zamanı';
+                            ? t('prayer.meta.isha')
+                            : t('prayer.meta.preparation');
 
             return (
               <TouchableOpacity
@@ -1856,7 +1895,7 @@ export default function App() {
                       <Text style={styles.prayerName}>{PRAYER_NAMES[key]}</Text>
                       {isActive && (
                         <View style={styles.currentBadge}>
-                          <Text style={styles.currentBadgeText}>Şimdi</Text>
+                          <Text style={styles.currentBadgeText}>{t('common.now')}</Text>
                         </View>
                       )}
                       {isPlaying && (
@@ -1883,9 +1922,9 @@ export default function App() {
 
         <View style={styles.habitsSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Zikir & Hedefler</Text>
+            <Text style={styles.sectionTitle}>{t('zikr.title')}</Text>
             <Text style={styles.sectionSubtitle}>
-              Günlük ve haftalık zikrinizi kısa önerilerle takip edin.
+              {t('zikr.subtitle')}
             </Text>
           </View>
 
@@ -1964,9 +2003,9 @@ export default function App() {
 
           <View style={styles.yasinCard}>
             <View style={styles.yasinText}>
-              <Text style={styles.yasinTitle}>Yasin Suresi Tam Metin</Text>
+              <Text style={styles.yasinTitle}>{t('zikr.yasinTitle')}</Text>
               <Text style={styles.yasinSubtitle}>
-                1-83. ayetlerin okunuşu ve anlamını ihtiyaç duyduğunuzda açıp okuyun.
+                {t('zikr.yasinSubtitle')}
               </Text>
             </View>
             <TouchableOpacity
@@ -1975,7 +2014,7 @@ export default function App() {
               onPress={() => setYasinModalVisible(true)}
             >
               <Ionicons name="book" size={18} color="#1e3a8a" style={styles.yasinButtonIcon} />
-              <Text style={styles.yasinButtonText}>Yasin’i Oku</Text>
+              <Text style={styles.yasinButtonText}>{t('zikr.readYasin')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1988,8 +2027,8 @@ export default function App() {
                   <Ionicons name="compass" size={18} color="#0f172a" />
                 </View>
                 <View>
-                  <Text style={styles.qiblaTitle}>Kıble Pusulası</Text>
-                  <Text style={styles.qiblaSubtitle}>Cihaz başlığı: {deviceHeadingDisplay}</Text>
+                  <Text style={styles.qiblaTitle}>{t('home.qiblaTitle')}</Text>
+                  <Text style={styles.qiblaSubtitle}>{t('home.qiblaSubtitle')}: {deviceHeadingDisplay}</Text>
                 </View>
               </View>
             </View>
@@ -1997,16 +2036,16 @@ export default function App() {
             <View style={styles.directionCard}>
               <View style={styles.directionBadge}>
                 <Ionicons name="navigate" size={16} color="#93C5FD" />
-                <Text style={styles.directionBadgeText}>Kıble yönlendirme</Text>
+                <Text style={styles.directionBadgeText}>{t('home.kaabaDirection')}</Text>
               </View>
               <Text style={styles.directionText}>{directionMessage}</Text>
               <View style={styles.directionMetaRow}>
                 <View style={[styles.directionMetaItem, styles.directionMetaItemDivider]}>
-                  <Text style={styles.directionMetaLabel}>Fark</Text>
+                  <Text style={styles.directionMetaLabel}>{t('home.diff')}</Text>
                   <Text style={styles.directionMetaValue}>{qiblaDiffDisplay}</Text>
                 </View>
                 <View style={styles.directionMetaItem}>
-                  <Text style={styles.directionMetaLabel}>Cihaz</Text>
+                  <Text style={styles.directionMetaLabel}>{t('home.device')}</Text>
                   <Text style={styles.directionMetaValue}>{deviceHeadingDisplay}</Text>
                 </View>
               </View>
@@ -2069,15 +2108,15 @@ export default function App() {
 
             <View style={styles.qiblaInfoRow}>
               <View style={styles.qiblaInfoCard}>
-                <Text style={styles.infoLabel}>Kıble Açısı</Text>
+                <Text style={styles.infoLabel}>{t('home.angle')}</Text>
                 <Text style={styles.infoValue}>{qiblaAngleDisplay}</Text>
               </View>
               <View style={styles.qiblaInfoCard}>
-                <Text style={styles.infoLabel}>Cihaz Yönü</Text>
+                <Text style={styles.infoLabel}>{t('home.device')}</Text>
                 <Text style={styles.infoValue}>{deviceHeadingDisplay}</Text>
               </View>
               <View style={styles.qiblaInfoCard}>
-                <Text style={styles.infoLabel}>Fark</Text>
+                <Text style={styles.infoLabel}>{t('home.diff')}</Text>
                 <Text style={[styles.infoValue, isQiblaAligned && styles.infoValueAligned]}>{qiblaDiffDisplay}</Text>
               </View>
             </View>
@@ -2085,26 +2124,26 @@ export default function App() {
             <View style={styles.kaabaInfoBlock}>
               <View style={styles.kaabaInfoHeader}>
                 <Ionicons name="cube" size={18} color="#22d3ee" />
-                <Text style={styles.kaabaInfoTitle}>Kâbe Konumu</Text>
+                <Text style={styles.kaabaInfoTitle}>{t('home.kaabaLocation')}</Text>
               </View>
-              <Text style={styles.kaabaInfoLead}>Mekke, Suudi Arabistan</Text>
+              <Text style={styles.kaabaInfoLead}>{t('home.mecca')}</Text>
               <View style={styles.kaabaInfoTags}>
                 <View style={styles.kaabaPill}>
                   <Ionicons name="trending-up" size={14} color="#0f172a" />
-                  <Text style={styles.kaabaPillText}>{kaabaDistanceDisplay} uzaklıkta</Text>
+                  <Text style={styles.kaabaPillText}>{kaabaDistanceDisplay} {t('home.away')}</Text>
                 </View>
                 <View style={styles.kaabaPill}>
                   <Ionicons name="navigate" size={14} color="#0f172a" />
-                  <Text style={styles.kaabaPillText}>{kaabaBearingDisplay} istikamet</Text>
+                  <Text style={styles.kaabaPillText}>{kaabaBearingDisplay} {t('home.bearing')}</Text>
                 </View>
               </View>
               <View style={styles.kaabaMetaRow}>
                 <View style={styles.kaabaMetaItem}>
-                  <Text style={styles.kaabaMetaLabel}>Enlem</Text>
+                  <Text style={styles.kaabaMetaLabel}>{t('home.latitude')}</Text>
                   <Text style={styles.kaabaMetaValue}>{kaabaMetrics.latLabel}</Text>
                 </View>
                 <View style={styles.kaabaMetaItem}>
-                  <Text style={styles.kaabaMetaLabel}>Boylam</Text>
+                  <Text style={styles.kaabaMetaLabel}>{t('home.longitude')}</Text>
                   <Text style={styles.kaabaMetaValue}>{kaabaMetrics.lonLabel}</Text>
                 </View>
               </View>
@@ -2117,15 +2156,15 @@ export default function App() {
           <View style={styles.focusCard}>
             <View style={styles.focusBadge}>
               <Ionicons name="book-outline" size={16} color="#C7D2FE" />
-              <Text style={styles.focusBadgeText}>Günün Notu</Text>
+              <Text style={styles.focusBadgeText}>{t('home.dailyNote')}</Text>
             </View>
             <Text style={styles.focusTitle}>{focusReflection.title}</Text>
             <Text style={styles.focusBody}>{focusReflection.body}</Text>
           </View>
 
           <View style={[styles.focusCard, styles.memorialCard]}>
-            <Text style={styles.memorialTitle}>"Zeliha Tiryakioğlu" hayrına yapılmıştır.</Text>
-            <Text style={styles.memorialSubtitle}>Ruhuna bir Fatiha okumanız dileğiyle...</Text>
+            <Text style={styles.memorialTitle}>{t('home.memorialTitle')}</Text>
+            <Text style={styles.memorialSubtitle}>{t('home.memorialSubtitle')}</Text>
           </View>
         </View>
       </ScrollView>
@@ -2150,7 +2189,7 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.calendarModal]}>
             <View style={styles.calendarModalHeader}>
-              <Text style={styles.modalTitle}>Takvim</Text>
+              <Text style={styles.modalTitle}>{t('home.calendar')}</Text>
               <TouchableOpacity
                 style={styles.modalCloseIcon}
                 onPress={() => setCalendarModalVisible(false)}
@@ -2172,7 +2211,7 @@ export default function App() {
                     calendarTab === 'imsakiye' && styles.calendarTabTextActive,
                   ]}
                 >
-                  İmsakiye
+                  {t('calendar.tabImsakiye')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -2188,7 +2227,7 @@ export default function App() {
                     calendarTab === 'religious' && styles.calendarTabTextActive,
                   ]}
                 >
-                  Dini Günler
+                  {t('calendar.tabReligiousDays')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -2202,7 +2241,7 @@ export default function App() {
                 {imsakiyeData.length === 0 ? (
                   <View style={styles.imsakiyeEmpty}>
                     <Text style={styles.imsakiyeEmptyText}>
-                      Konum doğrulandığında 30 günlük imsakiye burada listelenir.
+                      {t('calendar.emptyImsakiye')}
                     </Text>
                   </View>
                 ) : (
