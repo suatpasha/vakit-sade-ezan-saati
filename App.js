@@ -28,8 +28,17 @@ import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+
+const adUnitId = __DEV__ 
+  ? TestIds.BANNER 
+  : Platform.select({
+      ios: 'ca-app-pub-6300495112628329/8325709971',
+      android: 'ca-app-pub-6300495112628329/1128511738',
+    });
 
 const PRAYER_NAMES = {
   fajr: 'İmsak',
@@ -1344,6 +1353,7 @@ export default function App() {
   };
 
   const updateZikrProgress = (goalKey, delta) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const goal = ZIKR_GOALS.find((item) => item.key === goalKey);
     if (!goal) return;
     setZikrProgress((prev) => {
@@ -1818,9 +1828,17 @@ export default function App() {
                 ? 'Kerahat vaktinde ezan okunmaz'
                 : isActive
                   ? 'Vakit içindesiniz'
-                  : nextPrayer?.name === key
-                    ? 'Sıradaki vakit'
-                    : 'Hazırlık zamanı';
+                  : key === 'fajr'
+                    ? 'Rızık ve Bereketin Dağıtıldığı Vakit'
+                    : key === 'dhuhr'
+                      ? 'Gök Kapılarının Açıldığı Rahmet Vakti'
+                      : key === 'asr'
+                        ? 'Amellerin Arz Edildiği ve Korunma Vakti'
+                        : key === 'maghrib'
+                          ? 'Tövbenin Kabulü ve Vuslat Vakti'
+                          : key === 'isha'
+                            ? 'Rabb ile Baş Başa Kalma (Halvet) Vakti'
+                            : 'Hazırlık zamanı';
 
             return (
               <TouchableOpacity
@@ -2111,6 +2129,16 @@ export default function App() {
           </View>
         </View>
       </ScrollView>
+
+      <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 50 }}>
+        <BannerAd
+          unitId={adUnitId}
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          requestOptions={{
+            requestNonPersonalizedAdsOnly: true,
+          }}
+        />
+      </View>
 
       {/* Takvim Modal */}
       <Modal

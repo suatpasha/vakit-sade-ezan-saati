@@ -48,7 +48,14 @@
         }
       ],
 
-      "expo-location"
+      "expo-location",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-6300495112628329~8677481654",
+          "iosAppId": "ca-app-pub-6300495112628329~3264954986"
+        }
+      ]
     ],
 
     "extra": {
