@@ -7,6 +7,10 @@
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "locales": {
+      "tr": "./locales/tr.json",
+      "en": "./locales/en.json"
+    },
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
@@ -15,7 +19,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.suatp.vakitezansaati",
-      "buildNumber": "6"
+      "buildNumber": "7",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "The app needs your location to accurately calculate prayer times and show the Qibla direction.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "The app needs your location to accurately calculate prayer times and show the Qibla direction."
+      }
     },
     "android": {
       "versionCode": 6,
@@ -24,7 +33,9 @@
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
