@@ -34,7 +34,7 @@ export default {
       asr: 'Time for Protection and Presentation of Deeds',
       maghrib: 'Time for Acceptance of Repentance and Reunion',
       isha: 'Time for Seclusion with the Lord',
-      kerahat: 'No prayer during sunrise',
+        kerahat: 'Pause for reflection—let the sun rise, let the heart rest.',
       current: 'It is prayer time',
       next: 'Next prayer',
       preparation: 'Preparation time',
@@ -65,6 +65,9 @@ export default {
     turnRight: 'Turn slightly right',
     turnLeft: 'Turn slightly left',
     waitingData: 'Waiting for data',
+    progress: 'Progress',
+    active: 'Active',
+    determining: 'Determining',
     locationPermissionRequired: 'Location Permission Required',
     locationPermissionText: 'We need location permission to calculate prayer times.',
     openSettings: 'Open Settings',
@@ -91,6 +94,26 @@ export default {
       {
         title: 'Preparation',
         body: 'Even if the Adhan hasn\'t been called yet, it is up to you to prepare your heart for prayer.',
+      },
+      {
+        title: 'Light for the Day',
+        body: 'Begin with Fajr; a day started with prayer carries light into every task.',
+      },
+      {
+        title: 'Pause and Remember',
+        body: 'At Dhuhr, pause, breathe, remember Who sustains your work.',
+      },
+      {
+        title: 'Anchor at Asr',
+        body: 'Asr is an anchor—return to it so the day does not drift you away.',
+      },
+      {
+        title: 'Gratitude at Maghrib',
+        body: 'Every sunset is a reminder: be grateful for what was given and forgiven.',
+      },
+      {
+        title: 'Calm of Isha',
+        body: 'Close the day with Isha; let the night hold your prayers and your trust.',
       },
     ],
     memorialTitle: 'Made in memory of "Zeliha Tiryakioğlu".',
@@ -124,6 +147,10 @@ export default {
   zikr: {
     title: 'Dhikr & Goals',
     subtitle: 'Track your daily and weekly dhikr with short suggestions.',
+    period: {
+      daily: 'Daily goal',
+      weekly: 'Weekly goal',
+    },
     goals: {
       tesbih: {
         label: 'Morning Tasbih',
@@ -146,6 +173,21 @@ export default {
     readYasin: 'Read Yasin',
     remaining: 'Remaining',
     target: 'goal',
+    actions: {
+      reset: 'Reset',
+      add5: 'Add 5',
+    },
+  },
+  guide: {
+    title: 'How to Pray (Daily)',
+    subtitle: 'A quick refresher for fard (obligatory) prayers.',
+    steps: [
+      { title: 'Intention & Wudu', text: 'Make wudu, face the Qibla, set your intention.' },
+      { title: 'Opening & Standing', text: 'Takbir, Fatiha + short surah in each standing.' },
+      { title: 'Ruku & Sujud', text: 'Bow (subhana rabbiyal azim), then two sajdahs (subhana rabbiyal a’la).' },
+      { title: 'Sitting & Tashahhud', text: 'At-tahiyyat in sitting; add salawat and dua in final sitting.' },
+      { title: 'Closing', text: 'End with salam to the right and left.' },
+    ],
   },
   settings: {
     language: 'Language',

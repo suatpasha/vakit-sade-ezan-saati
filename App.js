@@ -58,7 +58,7 @@ const HEADING_SAMPLE_WINDOW = 6;
 const HEADING_UPDATE_MS = 120;
 const DECLINATION_SMOOTHING_FACTOR = 0.25;
 const HEADING_COMPASS_OFFSET = 0;
-const NEEDLE_VISUAL_OFFSET = 90; // degrees clockwise adjustment for artwork
+// const NEEDLE_VISUAL_OFFSET = 90; // Removed as per user request for direct calculation
 const IMSAKIYE_DAYS = 30;
 // const IMSAKIYE_COLUMNS = ... (Component içine taşındı)
 const KAABA_COORDS = { latitude: 21.4225, longitude: 39.8262 };
@@ -750,38 +750,58 @@ export default function App() {
     isha: t('prayer.isha')
   }), [t]);
 
-  const ZIKR_GOALS = useMemo(() => [
-    {
-      key: 'morningTasbih',
-      label: t('zikr.goals.tesbih.label'),
-      period: 'Günlük',
-      target: 33,
-      unit: 'tesbih',
-      suggestion: t('zikr.goals.tesbih.suggestion'),
-      reminder: t('zikr.goals.tesbih.reminder'),
-      color: '#38bdf8',
-    },
-    {
-      key: 'salawat',
-      label: t('zikr.goals.salawat.label'),
-      period: 'Günlük',
-      target: 50,
-      unit: 'salawat',
-      suggestion: t('zikr.goals.salawat.suggestion'),
-      reminder: t('zikr.goals.salawat.reminder'),
-      color: '#f472b6',
-    },
-    {
-      key: 'weeklyYasin',
-      label: t('zikr.goals.hatim.label'),
-      period: 'Haftalık',
-      target: 1,
-      unit: 'hatim',
-      suggestion: t('zikr.goals.hatim.suggestion'),
-      reminder: t('zikr.goals.hatim.reminder'),
-      color: '#34d399',
-    },
-  ], [t]);
+  // Locale-aware notification strings (keep simple without new keys)
+  const notificationText = useMemo(() => {
+    const isTR = i18n.language === 'tr';
+    return {
+      timeTitle: (name) => isTR ? `${name} vakti` : `${name} time`,
+      timeBody: (name) => isTR ? `${name} vakti girdi.` : `${name} time has started.`,
+      tenMinTitle: (name) => isTR ? `${name} vaktine 10 dakika kaldı` : `10 minutes to ${name}`,
+      tenMinBody: (name) => isTR ? `${name} için hazırlanın.` : `Get ready for ${name}.`,
+    };
+  }, [i18n.language, t]);
+
+  const PRAYER_GUIDE = useMemo(() => t('guide.steps', { returnObjects: true }) || [], [t, i18n.language]);
+
+  const ZIKR_GOALS = useMemo(() => {
+    const dailyLabel = t('zikr.period.daily');
+    const weeklyLabel = t('zikr.period.weekly');
+    return [
+      {
+        key: 'morningTasbih',
+        label: t('zikr.goals.tesbih.label'),
+        periodKey: 'daily',
+        periodLabel: dailyLabel,
+        target: 99,
+        unit: 'tesbih',
+        suggestion: t('zikr.goals.tesbih.suggestion'),
+        reminder: t('zikr.goals.tesbih.reminder'),
+        color: '#38bdf8',
+      },
+      {
+        key: 'salawat',
+        label: t('zikr.goals.salawat.label'),
+        periodKey: 'daily',
+        periodLabel: dailyLabel,
+        target: 50,
+        unit: 'salawat',
+        suggestion: t('zikr.goals.salawat.suggestion'),
+        reminder: t('zikr.goals.salawat.reminder'),
+        color: '#f472b6',
+      },
+      {
+        key: 'weeklyYasin',
+        label: t('zikr.goals.hatim.label'),
+        periodKey: 'weekly',
+        periodLabel: weeklyLabel,
+        target: 1,
+        unit: 'hatim',
+        suggestion: t('zikr.goals.hatim.suggestion'),
+        reminder: t('zikr.goals.hatim.reminder'),
+        color: '#34d399',
+      },
+    ];
+  }, [t]);
 
   const FOCUS_REFLECTIONS = useMemo(() => {
     const reflections = t('home.reflections', { returnObjects: true });
@@ -875,10 +895,10 @@ export default function App() {
         : null,
     [deviceHeading]
   );
-  const needleVisualRotation = `${NEEDLE_VISUAL_OFFSET}deg`;
-  const needleLabelCounterRotation = `${-NEEDLE_VISUAL_OFFSET}deg`;
+  // const needleVisualRotation = `${NEEDLE_VISUAL_OFFSET}deg`;
+  // const needleLabelCounterRotation = `${-NEEDLE_VISUAL_OFFSET}deg`;
   const deviceHeadingVisual = adjustedHeading !== null
-    ? normalizeAngle(adjustedHeading + NEEDLE_VISUAL_OFFSET)
+    ? normalizeAngle(adjustedHeading)
     : null;
   const todayReferenceKey = useMemo(() => {
     const today = new Date();
@@ -1042,11 +1062,11 @@ export default function App() {
       ZIKR_GOALS.forEach((goal) => {
         const key = `${goal.key}Meta`;
         const meta = prev[key] || {};
-        if (goal.period === 'Günlük' && meta.lastReset !== currentDay) {
+        if (goal.periodKey === 'daily' && meta.lastReset !== currentDay) {
           updated[goal.key] = 0;
           updated[key] = { ...meta, lastReset: currentDay };
         }
-        if (goal.period === 'Haftalık' && meta.lastReset !== currentWeek) {
+        if (goal.periodKey === 'weekly' && meta.lastReset !== currentWeek) {
           updated[goal.key] = 0;
           updated[key] = { ...meta, lastReset: currentWeek };
         }
@@ -1121,7 +1141,12 @@ export default function App() {
       setPrayerTimes(times);
 
       // 2. Kıble Açısı
-      const qibla = Qibla(coords);
+      const qibla = initialBearing(
+      coords.latitude,
+      coords.longitude,
+      KAABA_COORDS.latitude,
+      KAABA_COORDS.longitude
+    );
       setQiblaAngle(qibla);
 
       // 3. Pusula Başlat
@@ -1528,8 +1553,8 @@ export default function App() {
 
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: `${PRAYER_NAMES[key]} vakti`,
-          body: `${PRAYER_NAMES[key]} vakti girdi.`,
+          title: notificationText.timeTitle(PRAYER_NAMES[key]),
+          body: notificationText.timeBody(PRAYER_NAMES[key]),
           sound: 'ogle.mp3',
           priority: Notifications.AndroidNotificationPriority.MAX,
         },
@@ -1540,8 +1565,8 @@ export default function App() {
       if (tenMinutesBefore > now) {
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: `${PRAYER_NAMES[key]} vaktine 10 dakika kaldı`,
-            body: `${PRAYER_NAMES[key]} için hazırlanın.`,
+            title: notificationText.tenMinTitle(PRAYER_NAMES[key]),
+            body: notificationText.tenMinBody(PRAYER_NAMES[key]),
             sound: null,
             priority: Notifications.AndroidNotificationPriority.DEFAULT,
           },
@@ -1592,11 +1617,12 @@ export default function App() {
       : null;
   const visualDiff =
     qiblaAngleDiff !== null
-      ? normalizeDelta(qiblaAngleDiff + NEEDLE_VISUAL_OFFSET)
+      ? normalizeDelta(qiblaAngleDiff)
       : null;
   const qiblaDiffAbs = visualDiff !== null ? Math.abs(visualDiff) : null;
   const isQiblaAligned = qiblaDiffAbs !== null && qiblaDiffAbs <= 5;
-  const qiblaDirectionText = visualDiff !== null ? (visualDiff > 0 ? 'Sağa çevir' : 'Sola çevir') : '';
+  // Görsel yönlendirme: işaret + ise sola, - ise sağa çevir
+  const qiblaDirectionText = visualDiff !== null ? (visualDiff > 0 ? 'Sola çevir' : 'Sağa çevir') : '';
   const qiblaAngleDisplay = qiblaAngle !== null ? `${Math.round(qiblaAngle)}°` : '--°';
   const deviceHeadingDisplay =
     deviceHeadingVisual !== null ? `${Math.round(deviceHeadingVisual)}°` : '--°';
@@ -1634,7 +1660,7 @@ export default function App() {
   const directionMessage = isQiblaAligned
     ? t('home.qiblaAligned')
     : visualDiff !== null
-      ? (visualDiff > 0 ? t('home.turnRight') : t('home.turnLeft'))
+      ? (visualDiff > 0 ? t('home.turnLeft') : t('home.turnRight'))
       : t('home.waitingData');
 
   const cardinalPoints = [
@@ -1707,12 +1733,14 @@ export default function App() {
       >
         <View style={styles.heroCard}>
           <View style={styles.heroHeader}>
-            <View>
+            <View style={styles.heroHeaderLeft}>
               <Text style={styles.heroChip}>{t('home.location')}</Text>
               <Text style={styles.heroLocation}>{locationLabel}</Text>
               <Text style={styles.heroDate}>{formatDate(new Date())}</Text>
             </View>
-            <Image source={require('./assets/logo.png')} style={styles.heroLogo} />
+            <View style={styles.heroLogoContainer}>
+              <Image source={require('./assets/logo.png')} style={styles.heroLogo} />
+            </View>
           </View>
 
           <View style={styles.heroCountdownRow}>
@@ -1747,12 +1775,22 @@ export default function App() {
           </View>
 
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.min(prayerProgress * 100, 100)}%` }]} />
+            <LinearGradient
+              colors={['#22d3ee', '#34d399']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[
+                styles.progressFill,
+                { width: `${Math.min(prayerProgress * 100, 100)}%` }
+              ]}
+            />
           </View>
           <View style={styles.progressMeta}>
-            <Text style={styles.progressMetaText}>İlerleme {prayerProgressDisplay}</Text>
             <Text style={styles.progressMetaText}>
-              Aktif: {currentPrayer ? PRAYER_NAMES[currentPrayer.name] : 'Belirleniyor'}
+              {t('home.progress')} {prayerProgressDisplay}
+            </Text>
+            <Text style={styles.progressMetaText}>
+              {t('home.active')}: {currentPrayer ? PRAYER_NAMES[currentPrayer.name] : t('home.determining')}
             </Text>
           </View>
 
@@ -1938,18 +1976,26 @@ export default function App() {
                 const remaining = Math.max(goal.target - value, 0);
                 const disableMinus = value <= 0;
                 const disablePlus = value >= goal.target;
+                const progressColor =
+                  goal.key === 'morningTasbih'
+                    ? value >= 66
+                      ? '#22c55e'
+                      : value >= 33
+                        ? '#fbbf24'
+                        : goal.color
+                    : goal.color;
                 return (
-                  <View key={goal.key} style={styles.habitCard}>
+                <View key={goal.key} style={styles.habitCard}>
                     <View style={styles.habitHeader}>
                       <View>
                         <Text style={styles.habitLabel}>{goal.label}</Text>
                         <Text style={styles.habitPeriod}>
-                          {goal.period} hedef • {value}/{goal.target} {goal.unit}
+                          {goal.periodLabel} • {value}/{goal.target} {goal.unit}
                         </Text>
                       </View>
                       <View style={[styles.habitChip, { borderColor: goal.color }]}>
                         <Text style={[styles.habitChipText, { color: goal.color }]}>
-                          {goal.period}
+                          {goal.periodLabel}
                         </Text>
                       </View>
                     </View>
@@ -1959,13 +2005,13 @@ export default function App() {
                       <View
                         style={[
                           styles.habitProgressFill,
-                          { width: `${ratio * 100}%`, backgroundColor: goal.color },
+                          { width: `${ratio * 100}%`, backgroundColor: progressColor },
                         ]}
                       />
                     </View>
                     <View style={styles.habitProgressMeta}>
                       <Text style={styles.habitRemaining}>
-                        Kalan: {remaining} {goal.unit}
+                        {t('zikr.remaining')}: {remaining} {goal.unit}
                       </Text>
                       <Text style={styles.habitPercent}>{Math.round(ratio * 100)}%</Text>
                     </View>
@@ -1994,6 +2040,18 @@ export default function App() {
                       >
                         <Ionicons name="add" size={18} color="#022c22" />
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.habitActionBtn,
+                          styles.habitActionBtnReset,
+                          value <= 0 && styles.habitActionBtnDisabled,
+                        ]}
+                        disabled={value <= 0}
+                        activeOpacity={0.8}
+                        onPress={() => updateZikrProgress(goal.key, -value)}
+                      >
+                        <Ionicons name="refresh" size={16} color="#F8FAFC" />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -2018,6 +2076,26 @@ export default function App() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {PRAYER_GUIDE?.length > 0 && (
+          <View style={styles.guideCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{t('guide.title')}</Text>
+              <Text style={styles.sectionSubtitle}>{t('guide.subtitle')}</Text>
+            </View>
+            {PRAYER_GUIDE.map((step, idx) => (
+              <View key={idx} style={styles.guideStepRow}>
+                <View style={styles.guideStepNumber}>
+                  <Text style={styles.guideStepNumberText}>{idx + 1}</Text>
+                </View>
+                <View style={styles.guideStepBody}>
+                  <Text style={styles.guideStepTitle}>{step.title}</Text>
+                  <Text style={styles.guideStepText}>{step.text}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {qiblaAngle !== null && (
           <View style={styles.qiblaContainer}>
@@ -2082,13 +2160,18 @@ export default function App() {
                   isQiblaAligned && styles.centerDotAligned
                 ]} />
                 <View style={styles.northMarker} />
+                {kaabaMetrics && (
+                  <View style={styles.kaabaTipIcon}>
+                    <Ionicons name="cube" size={14} color="#B91C1C" />
+                  </View>
+                )}
                 <Animated.View
                   style={[
                     styles.qiblaNeedleWrapper,
                     {
                       transform: [
                         { rotate: rotateAnim.interpolate({ inputRange: [-180, 180], outputRange: ['-180deg', '180deg'] }) },
-                        { rotate: needleVisualRotation },
+                        // { rotate: needleVisualRotation }, // Removed as per user request
                         { scale: arrowPulseAnim },
                       ],
                     },
@@ -2098,11 +2181,6 @@ export default function App() {
                   <View style={styles.qiblaNeedleHead} />
                 </Animated.View>
 
-                {kaabaMetrics && (
-                  <View style={styles.kaabaTipIcon}>
-                    <Ionicons name="cube" size={14} color="#B91C1C" />
-                  </View>
-                )}
               </View>
             </View>
 
@@ -2120,35 +2198,6 @@ export default function App() {
                 <Text style={[styles.infoValue, isQiblaAligned && styles.infoValueAligned]}>{qiblaDiffDisplay}</Text>
               </View>
             </View>
-          {kaabaMetrics && (
-            <View style={styles.kaabaInfoBlock}>
-              <View style={styles.kaabaInfoHeader}>
-                <Ionicons name="cube" size={18} color="#22d3ee" />
-                <Text style={styles.kaabaInfoTitle}>{t('home.kaabaLocation')}</Text>
-              </View>
-              <Text style={styles.kaabaInfoLead}>{t('home.mecca')}</Text>
-              <View style={styles.kaabaInfoTags}>
-                <View style={styles.kaabaPill}>
-                  <Ionicons name="trending-up" size={14} color="#0f172a" />
-                  <Text style={styles.kaabaPillText}>{kaabaDistanceDisplay} {t('home.away')}</Text>
-                </View>
-                <View style={styles.kaabaPill}>
-                  <Ionicons name="navigate" size={14} color="#0f172a" />
-                  <Text style={styles.kaabaPillText}>{kaabaBearingDisplay} {t('home.bearing')}</Text>
-                </View>
-              </View>
-              <View style={styles.kaabaMetaRow}>
-                <View style={styles.kaabaMetaItem}>
-                  <Text style={styles.kaabaMetaLabel}>{t('home.latitude')}</Text>
-                  <Text style={styles.kaabaMetaValue}>{kaabaMetrics.latLabel}</Text>
-                </View>
-                <View style={styles.kaabaMetaItem}>
-                  <Text style={styles.kaabaMetaLabel}>{t('home.longitude')}</Text>
-                  <Text style={styles.kaabaMetaValue}>{kaabaMetrics.lonLabel}</Text>
-                </View>
-              </View>
-            </View>
-          )}
           </View>
         )}
 
@@ -2527,30 +2576,44 @@ const styles = StyleSheet.create({
   },
   heroHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  heroHeaderLeft: {
+    flex: 1,
+    paddingRight: 16,
+    gap: 4,
   },
   heroChip: {
     fontSize: 12,
+    fontWeight: '700',
     color: '#A5F3FC',
     textTransform: 'uppercase',
     letterSpacing: 1,
-    marginBottom: 4,
   },
   heroLocation: {
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
     color: '#F8FAFC',
   },
   heroDate: {
     fontSize: 14,
     color: 'rgba(248,250,252,0.7)',
-    marginTop: 2,
+  },
+  heroLogoContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    marginLeft: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden', // prevent iOS overflow
   },
   heroLogo: {
-    width: 72,
-    height: 72,
-    opacity: 0.85,
+    width: '100%',
+    height: '100%',
+    opacity: 0.9,
+    resizeMode: 'contain',
   },
   heroCountdownRow: {
     marginTop: 20,
@@ -2616,16 +2679,21 @@ const styles = StyleSheet.create({
     color: 'rgba(248,250,252,0.3)',
   },
   progressTrack: {
-    height: 6,
+    height: 12,
     borderRadius: 999,
-    backgroundColor: 'rgba(148,163,184,0.25)',
+    backgroundColor: 'rgba(148,163,184,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
     marginTop: 24,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#34D399',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
   progressMeta: {
     flexDirection: 'row',
@@ -2878,6 +2946,12 @@ const styles = StyleSheet.create({
   habitActionBtnAdd: {
     backgroundColor: '#4ade80',
   },
+  habitActionBtnReset: {
+    marginLeft: 10,
+    backgroundColor: 'rgba(248,113,113,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.6)',
+  },
   habitActionBtnDisabled: {
     opacity: 0.5,
   },
@@ -3021,7 +3095,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.78)',
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.25)',
-    marginBottom: 28,
+    marginTop: 20,
+    marginBottom: 36,
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.25,
@@ -3282,69 +3357,6 @@ const styles = StyleSheet.create({
   infoValueAligned: {
     color: '#34D399',
   },
-  kaabaInfoBlock: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 18,
-    backgroundColor: 'rgba(15,23,42,0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)',
-  },
-  kaabaInfoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  kaabaInfoTitle: {
-    marginLeft: 8,
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  kaabaInfoLead: {
-    marginTop: 6,
-    color: 'rgba(248,250,252,0.7)',
-    fontSize: 13,
-  },
-  kaabaInfoTags: {
-    flexDirection: 'row',
-    marginTop: 12,
-    flexWrap: 'wrap',
-  },
-  kaabaPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#d9f99d',
-    marginRight: 8,
-    marginBottom: 6,
-  },
-  kaabaPillText: {
-    marginLeft: 6,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  kaabaMetaRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
-  kaabaMetaItem: {
-    flex: 1,
-  },
-  kaabaMetaLabel: {
-    fontSize: 11,
-    color: 'rgba(248,250,252,0.55)',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  kaabaMetaValue: {
-    marginTop: 4,
-    fontSize: 15,
-    color: '#F8FAFC',
-    fontWeight: '600',
-  },
   focusGrid: {
     marginBottom: 60,
   },
@@ -3442,12 +3454,47 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   guideCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
+    marginTop: 16,
+    borderRadius: 24,
+    padding: 18,
+    backgroundColor: 'rgba(15,23,42,0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(15,23,42,0.08)',
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  guideStepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 12,
+  },
+  guideStepNumber: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  guideStepNumberText: {
+    color: '#22c55e',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  guideStepBody: {
+    flex: 1,
+  },
+  guideStepTitle: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  guideStepText: {
+    marginTop: 4,
+    color: 'rgba(248,250,252,0.75)',
+    fontSize: 13,
+    lineHeight: 18,
   },
   guideCardLabel: {
     fontSize: 12,

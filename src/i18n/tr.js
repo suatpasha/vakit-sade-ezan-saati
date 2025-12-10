@@ -34,7 +34,7 @@ export default {
       asr: 'Amellerin Arz Edildiği ve Korunma Vakti',
       maghrib: 'Tövbenin Kabulü ve Vuslat Vakti',
       isha: 'Rabb ile Baş Başa Kalma (Halvet) Vakti',
-      kerahat: 'Kerahat vaktinde ezan okunmaz',
+        kerahat: 'Biraz dur, tefekkür et; güneş doğarken kalbin dinlensin.',
       current: 'Vakit içindesiniz',
       next: 'Sıradaki vakit',
       preparation: 'Hazırlık zamanı',
@@ -65,6 +65,9 @@ export default {
     turnRight: 'Biraz sağa çevirin',
     turnLeft: 'Biraz sola çevirin',
     waitingData: 'Veri bekleniyor',
+    progress: 'İlerleme',
+    active: 'Aktif',
+    determining: 'Belirleniyor',
     locationPermissionRequired: 'Konum İzni Gerekli',
     locationPermissionText: 'Namaz vakitlerini hesaplamak için konum iznine ihtiyacımız var.',
     openSettings: 'Ayarları Aç',
@@ -91,6 +94,26 @@ export default {
       {
         title: 'Hazırlık',
         body: 'Ezan henüz duyulmadıysa bile kalbinizi vakte hazırlamak sizde.',
+      },
+      {
+        title: 'Güne Nurla Başla',
+        body: 'Güne İmsak ile başla; sabah namazı güne ışık taşır.',
+      },
+      {
+        title: 'Dur ve Hatırla',
+        body: 'Öğle vaktinde dur, derin bir nefes al; rızkın Sahib’ini hatırla.',
+      },
+      {
+        title: 'İkindi Demiri',
+        body: 'İkindi bir çıpa gibidir; gün seni savurmasın, vakitte buluş.',
+      },
+      {
+        title: 'Akşamın Şükrü',
+        body: 'Her gün batımı şükür fırsatıdır: verilenlere ve affedilenlere.',
+      },
+      {
+        title: 'Yatsının Sükûnu',
+        body: 'Yatsı ile günü kapat; gece dualarını ve teslimiyetini saklasın.',
       },
     ],
     memorialTitle: '"Zeliha Tiryakioğlu" hayrına yapılmıştır.',
@@ -124,6 +147,10 @@ export default {
   zikr: {
     title: 'Zikir & Hedefler',
     subtitle: 'Günlük ve haftalık zikrinizi kısa önerilerle takip edin.',
+    period: {
+      daily: 'Günlük hedef',
+      weekly: 'Haftalık hedef',
+    },
     goals: {
       tesbih: {
         label: 'Sabah Tesbihatı',
@@ -146,6 +173,21 @@ export default {
     readYasin: 'Yasin’i Oku',
     remaining: 'Kalan',
     target: 'hedef',
+    actions: {
+      reset: 'Sıfırla',
+      add5: '+5 ekle',
+    },
+  },
+  guide: {
+    title: 'Vakit Namazı Nasıl Kılınır?',
+    subtitle: 'Farz vakitler için kısa bir hatırlatma.',
+    steps: [
+      { title: 'Niyet & Abdest', text: 'Abdest al, Kıbleye dön, hangi vakit için niyet ettiğini belirle.' },
+      { title: 'Başlangıç & Kıyam', text: 'Tekbir al, her kıyamda Fatiha + kısa sure oku.' },
+      { title: 'Rükû & Secde', text: 'Rükûda “Sübhane rabbiyel azim”, iki secdede “Sübhane rabbiyel a’lâ” tesbih et.' },
+      { title: 'Oturma & Tahiyyat', text: 'Otururken Ettahiyyatü; son oturuşta salavat ve dua ekle.' },
+      { title: 'Selam', text: 'Sağa ve sola selam vererek namazı tamamla.' },
+    ],
   },
   settings: {
     language: 'Dil / Language',
