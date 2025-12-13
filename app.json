@@ -67,7 +67,6 @@
         }
       ],
       "expo-localization",
-      "expo-audio",
       "expo-build-properties"
     ],
     "extra": {
