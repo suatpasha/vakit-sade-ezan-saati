@@ -2,4 +2,7 @@
   <string name="app_name">Vakit</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
+  <!-- Default (fallback) location permission descriptions to match localized variants -->
+  <string name="NSLocationWhenInUseUsageDescription">The app needs your location to accurately calculate prayer times and show the Qibla direction.</string>
+  <string name="NSLocationAlwaysAndWhenInUseUsageDescription">The app needs your location to accurately calculate prayer times and show the Qibla direction.</string>
 </resources>
