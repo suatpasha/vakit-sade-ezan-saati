@@ -58,6 +58,10 @@ const HEADING_SAMPLE_WINDOW = 6;
 const HEADING_UPDATE_MS = 120;
 const DECLINATION_SMOOTHING_FACTOR = 0.25;
 const HEADING_COMPASS_OFFSET = 0;
+const NOTIFICATION_SOUND_ANDROID = 'ogle.mp3';
+const NOTIFICATION_SOUND_IOS = 'iosezan.caf';
+const NOTIFICATION_SOUND =
+  Platform.OS === 'ios' ? NOTIFICATION_SOUND_IOS : NOTIFICATION_SOUND_ANDROID;
 // const NEEDLE_VISUAL_OFFSET = 90; // Removed as per user request for direct calculation
 const IMSAKIYE_DAYS = 30;
 // const IMSAKIYE_COLUMNS = ... (Component içine taşındı)
@@ -820,24 +824,24 @@ export default function App() {
   ], [t]);
 
   const RELIGIOUS_DAYS = useMemo(() => [
-    { year: 2026, date: '2026-01-15', name: t('calendar.religiousDays.mirac') },
-    { year: 2026, date: '2026-02-02', name: t('calendar.religiousDays.berat') },
-    { year: 2026, date: '2026-02-18', name: t('calendar.religiousDays.ramadanStart') },
-    { year: 2026, date: '2026-03-15', name: t('calendar.religiousDays.kadir') },
-    { year: 2026, date: '2026-03-20', name: t('calendar.religiousDays.ramadanEid1') },
-    { year: 2026, date: '2026-05-27', name: t('calendar.religiousDays.eidAlAdha1') },
-    { year: 2026, date: '2026-06-17', name: t('calendar.religiousDays.hijriNewYear') },
-    { year: 2026, date: '2026-06-26', name: t('calendar.religiousDays.ashura') },
-    { year: 2026, date: '2026-10-21', name: t('calendar.religiousDays.mevlid') },
-    { year: 2027, date: '2027-01-05', name: t('calendar.religiousDays.mirac') },
-    { year: 2027, date: '2027-01-22', name: t('calendar.religiousDays.berat') },
-    { year: 2027, date: '2027-02-08', name: t('calendar.religiousDays.ramadanStart') },
-    { year: 2027, date: '2027-03-05', name: t('calendar.religiousDays.kadir') },
-    { year: 2027, date: '2027-03-09', name: t('calendar.religiousDays.ramadanEid1') },
-    { year: 2027, date: '2027-05-16', name: t('calendar.religiousDays.eidAlAdha1') },
-    { year: 2027, date: '2027-06-07', name: t('calendar.religiousDays.hijriNewYear') },
-    { year: 2027, date: '2027-06-16', name: t('calendar.religiousDays.ashura') },
-    { year: 2027, date: '2027-10-10', name: t('calendar.religiousDays.mevlid') },
+    { key: 'mirac', year: 2026, date: '2026-01-15', name: t('calendar.religiousDays.mirac') },
+    { key: 'berat', year: 2026, date: '2026-02-02', name: t('calendar.religiousDays.berat') },
+    { key: 'ramadanStart', year: 2026, date: '2026-02-18', name: t('calendar.religiousDays.ramadanStart') },
+    { key: 'kadir', year: 2026, date: '2026-03-15', name: t('calendar.religiousDays.kadir') },
+    { key: 'ramadanEid1', year: 2026, date: '2026-03-20', name: t('calendar.religiousDays.ramadanEid1') },
+    { key: 'eidAlAdha1', year: 2026, date: '2026-05-27', name: t('calendar.religiousDays.eidAlAdha1') },
+    { key: 'hijriNewYear', year: 2026, date: '2026-06-17', name: t('calendar.religiousDays.hijriNewYear') },
+    { key: 'ashura', year: 2026, date: '2026-06-26', name: t('calendar.religiousDays.ashura') },
+    { key: 'mevlid', year: 2026, date: '2026-10-21', name: t('calendar.religiousDays.mevlid') },
+    { key: 'mirac', year: 2027, date: '2027-01-05', name: t('calendar.religiousDays.mirac') },
+    { key: 'berat', year: 2027, date: '2027-01-22', name: t('calendar.religiousDays.berat') },
+    { key: 'ramadanStart', year: 2027, date: '2027-02-08', name: t('calendar.religiousDays.ramadanStart') },
+    { key: 'kadir', year: 2027, date: '2027-03-05', name: t('calendar.religiousDays.kadir') },
+    { key: 'ramadanEid1', year: 2027, date: '2027-03-09', name: t('calendar.religiousDays.ramadanEid1') },
+    { key: 'eidAlAdha1', year: 2027, date: '2027-05-16', name: t('calendar.religiousDays.eidAlAdha1') },
+    { key: 'hijriNewYear', year: 2027, date: '2027-06-07', name: t('calendar.religiousDays.hijriNewYear') },
+    { key: 'ashura', year: 2027, date: '2027-06-16', name: t('calendar.religiousDays.ashura') },
+    { key: 'mevlid', year: 2027, date: '2027-10-10', name: t('calendar.religiousDays.mevlid') },
   ], [t]);
 
   // --- STATE TANIMLARI ---
@@ -867,6 +871,7 @@ export default function App() {
   const [guideModalVisible, setGuideModalVisible] = useState(false);
   const [guideContent, setGuideContent] = useState(null);
   const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [ramadanModalVisible, setRamadanModalVisible] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notificationsPrefLoaded, setNotificationsPrefLoaded] = useState(false);
   const [zikrProgress, setZikrProgress] = useState({});
@@ -1246,11 +1251,15 @@ export default function App() {
       return null;
     }
 
-    let heading = Math.atan2(yh, xh);
+  // Platform-specific axis handling: iOS was already correct (yh, xh), Android needs swap
+  const heading = Platform.OS === 'android' ? Math.atan2(xh, yh) : Math.atan2(yh, xh);
     if (!Number.isFinite(heading)) {
       return null;
     }
-    return normalizeAngle(radToDeg(heading));
+  const headingDeg = radToDeg(heading);
+  // Android still reports ~90° west; apply +90° offset to align with true north
+  const correctedDeg = Platform.OS === 'android' ? headingDeg - 90 : headingDeg;
+  return normalizeAngle(correctedDeg);
   };
 
   const startHeadingWatch = async () => {
@@ -1274,7 +1283,16 @@ export default function App() {
           const rawHeading =
             computeTiltCompensatedHeading(data, accelerometerDataRef.current) ??
             (data?.x != null && data?.y != null
-              ? normalizeAngle(radToDeg(Math.atan2(data.x, data.y)))
+              ? (() => {
+                  const baseHeadingRad =
+                    Platform.OS === 'android'
+                      ? Math.atan2(data.x, data.y)
+                      : Math.atan2(data.y, data.x);
+                  const baseHeadingDeg = radToDeg(baseHeadingRad);
+                  const correctedDeg =
+                    Platform.OS === 'android' ? baseHeadingDeg + 90 : baseHeadingDeg;
+                  return normalizeAngle(correctedDeg);
+                })()
               : null);
 
           if (!Number.isFinite(rawHeading)) {
@@ -1469,7 +1487,7 @@ export default function App() {
         content: {
           title: 'Test Bildirimi',
           body: 'Ezan sesi testi başlatılıyor.',
-          sound: 'ogle.mp3',
+          sound: NOTIFICATION_SOUND,
           priority: Notifications.AndroidNotificationPriority.MAX,
         },
         trigger: {
@@ -1555,7 +1573,7 @@ export default function App() {
         content: {
           title: notificationText.timeTitle(PRAYER_NAMES[key]),
           body: notificationText.timeBody(PRAYER_NAMES[key]),
-          sound: 'ogle.mp3',
+          sound: NOTIFICATION_SOUND,
           priority: Notifications.AndroidNotificationPriority.MAX,
         },
         trigger: buildDateTrigger(time, 'ezan-channel'),
@@ -1610,6 +1628,22 @@ export default function App() {
   const formatDate = (date) => format(date, 'd MMMM yyyy, EEEE', { locale: currentLocale });
   const formatReligiousDate = (dateString) => format(new Date(dateString), 'd MMMM, EEEE', { locale: currentLocale });
   const formatShortDate = (date) => format(date, 'd MMM', { locale: currentLocale });
+  const formatDayLabel = (date) => format(date, 'd MMM, EEE', { locale: currentLocale });
+  const ramadanRange = useMemo(() => {
+    const now = new Date();
+    const starts = RELIGIOUS_DAYS.filter((d) => d.key === 'ramadanStart').map((d) => ({
+      ...d,
+      dateObj: new Date(d.date),
+    })).sort((a, b) => a.dateObj - b.dateObj);
+    if (starts.length === 0) return null;
+    const selectedStart = starts.find((d) => d.dateObj >= now) ?? starts[starts.length - 1];
+    const eids = RELIGIOUS_DAYS.filter((d) => d.key === 'ramadanEid1');
+    const eid = eids.find((d) => d.year === selectedStart.year) ?? eids[0];
+    return {
+      startLabel: selectedStart ? formatReligiousDate(selectedStart.date) : '—',
+      endLabel: eid ? formatReligiousDate(eid.date) : '—',
+    };
+  }, [RELIGIOUS_DAYS, formatReligiousDate]);
 
   const qiblaAngleDiff =
     qiblaAngle !== null && adjustedHeading !== null
@@ -1871,12 +1905,22 @@ export default function App() {
                 ? formatReligiousDate(upcomingReligiousDay.date)
                 : t('home.noUpcomingDay')}
             </Text>
+          <View style={styles.insightActions}>
             <TouchableOpacity
               style={styles.smallButton}
               onPress={() => setCalendarModalVisible(true)}
             >
               <Text style={styles.smallButtonText}>{t('home.openCalendar')}</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.smallButton, styles.smallButtonGhost]}
+              onPress={() => setRamadanModalVisible(true)}
+            >
+              <Text style={[styles.smallButtonText, styles.smallButtonGhostText]}>
+                {t('home.ramadanImsakiye')}
+              </Text>
+            </TouchableOpacity>
+          </View>
           </View>
         </View>
 
@@ -2421,6 +2465,92 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* Ramadan İmsakiye Modal */}
+      <Modal
+        visible={ramadanModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setRamadanModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.ramadanModal]}>
+            <View style={styles.calendarModalHeader}>
+              <View style={styles.ramadanHeaderTitle}>
+                <Ionicons name="moon" size={22} color="#A5F3FC" />
+                <Text style={styles.ramadanTitle}>{t('home.ramadanImsakiyeTitle')}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.modalCloseIcon, styles.modalCloseIconDanger]}
+                onPress={() => setRamadanModalVisible(false)}
+              >
+                <Ionicons name="close" size={22} color="#DC2626" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.ramadanSubtitle}>
+              {t('home.ramadanImsakiyeSubtitle', { location: locationLabel })}
+            </Text>
+            {ramadanRange && (
+              <View style={styles.ramadanRangeBox}>
+                <View style={styles.ramadanRangeRow}>
+                  <Ionicons name="time" size={16} color="#FBBF24" style={{ marginRight: 6 }} />
+                  <Text style={styles.ramadanRangeLabel}>{t('home.ramadanRange')}</Text>
+                </View>
+                <Text style={styles.ramadanRangeValue}>
+                  {ramadanRange.startLabel}  •  {ramadanRange.endLabel}
+                </Text>
+              </View>
+            )}
+
+            <ScrollView
+              style={styles.ramadanList}
+              contentContainerStyle={styles.ramadanListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {imsakiyeData.length === 0 ? (
+                <View style={styles.imsakiyeEmpty}>
+                  <Text style={styles.imsakiyeEmptyText}>{t('home.waitingData')}</Text>
+                </View>
+              ) : (
+                imsakiyeData.map((entry, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.ramadanRow,
+                      index % 2 === 1 && styles.ramadanRowAlt,
+                    ]}
+                  >
+                    <View style={styles.ramadanRowHeader}>
+                      <Text style={styles.ramadanDate}>{formatDayLabel(entry.date)}</Text>
+                      {index === 0 && (
+                        <View style={styles.ramadanBadge}>
+                          <Text style={styles.ramadanBadgeText}>{t('home.today')}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.ramadanTimes}>
+                      <View style={styles.ramadanTimeBox}>
+                        <View style={styles.ramadanTimeLabelRow}>
+                          <Ionicons name="alarm" size={16} color="#A5F3FC" style={{ marginRight: 6 }} />
+                          <Text style={styles.ramadanTimeLabel}>{t('home.imsak')}</Text>
+                        </View>
+                        <Text style={styles.ramadanTimeValue}>{formatTime(entry.fajr)}</Text>
+                      </View>
+                      <View style={styles.ramadanTimeBox}>
+                        <View style={styles.ramadanTimeLabelRow}>
+                          <Ionicons name="restaurant" size={16} color="#FBBF24" style={{ marginRight: 6 }} />
+                          <Text style={styles.ramadanTimeLabel}>{t('home.iftar')}</Text>
+                        </View>
+                        <Text style={styles.ramadanTimeValue}>{formatTime(entry.maghrib)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Namaz Rehberi Modal */}
       <Modal
         visible={guideModalVisible}
@@ -2835,20 +2965,33 @@ const styles = StyleSheet.create({
     color: 'rgba(248,250,252,0.65)',
     fontSize: 13,
   },
+  insightActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
   smallButton: {
     alignSelf: 'flex-start',
-    marginTop: 12,
     paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(147,197,253,0.5)',
-    backgroundColor: 'rgba(59,130,246,0.2)',
+    borderColor: 'rgba(226,232,240,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   smallButtonText: {
-    color: '#BFDBFE',
+    color: '#F8FAFC',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  smallButtonGhost: {
+    backgroundColor: 'transparent',
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  smallButtonGhostText: {
+    color: '#E0F2FE',
   },
   habitsSection: {
     marginTop: 12,
@@ -3627,7 +3770,12 @@ const styles = StyleSheet.create({
   modalCloseIcon: {
     padding: 6,
     borderRadius: 999,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FDECEC',
+  },
+  modalCloseIconDanger: {
+    backgroundColor: '#FDECEC',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.35)',
   },
   calendarList: {
     flexGrow: 0,
@@ -3715,6 +3863,129 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 14,
     lineHeight: 20,
+  },
+  ramadanModal: {
+    paddingBottom: 16,
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: 'rgba(226,232,240,0.08)',
+    width: '92%',
+    alignItems: 'stretch',
+  },
+  ramadanHeaderTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  ramadanTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#E2E8F0',
+    letterSpacing: 0.2,
+  },
+  ramadanSubtitle: {
+    color: '#CBD5E1',
+    marginTop: 2,
+    marginBottom: 12,
+    fontSize: 13,
+  },
+  ramadanRangeBox: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+    marginBottom: 10,
+  },
+  ramadanRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  ramadanRangeLabel: {
+    color: '#E2E8F0',
+    fontWeight: '700',
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
+  ramadanRangeValue: {
+    color: '#E2E8F0',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  ramadanList: {
+    flexGrow: 0,
+    maxHeight: 520,
+  },
+  ramadanListContent: {
+    paddingBottom: 12,
+    paddingTop: 4,
+    paddingHorizontal: 2,
+  },
+  ramadanRow: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+    marginBottom: 10,
+    width: '100%',
+  },
+  ramadanRowAlt: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(148,163,184,0.2)',
+  },
+  ramadanRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  ramadanDate: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  ramadanBadge: {
+    backgroundColor: 'rgba(16,185,129,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  ramadanBadgeText: {
+    fontSize: 12,
+    color: '#34D399',
+    fontWeight: '700',
+  },
+  ramadanTimes: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 4,
+  },
+  ramadanTimeBox: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.3)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+  },
+  ramadanTimeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  ramadanTimeLabel: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  ramadanTimeValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F8FAFC',
   },
   calendarYearLabel: {
     fontSize: 13,
