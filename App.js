@@ -28,11 +28,13 @@ import { Audio } from 'expo-av'; // expo-audio yerine expo-av kullanıyoruz
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import * as Haptics from 'expo-haptics';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
-import './src/i18n/i18n';
+import i18nInstance from './src/i18n/i18n';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
 const adUnitId = __DEV__ 
@@ -731,6 +733,174 @@ const YASIN_LINES = YASIN_TEXT.split('\n').map((line) => {
 const NOTIFICATION_PREF_KEY = 'notificationsEnabled';
 const ZIKR_PREF_KEY = 'zikrProgress';
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const BACKGROUND_TASK_NAME = 'prayer-notification-refresh';
+const NOTIFICATION_WINDOW_HOURS = 48;
+const BACKGROUND_FETCH_INTERVAL_HOURS = 6;
+const REMINDER_OFFSET_MS = 10 * 60 * 1000;
+
+const buildNotificationTextByLanguage = (language) => {
+  const isTR = language === 'tr' || language?.startsWith('tr');
+  return {
+    timeTitle: (name) => (isTR ? `${name} vakti` : `${name} time`),
+    timeBody: (name) => (isTR ? `${name} vakti girdi.` : `${name} time has started.`),
+    tenMinTitle: (name) =>
+      isTR ? `${name} vaktine 10 dakika kaldı` : `10 minutes to ${name}`,
+    tenMinBody: (name) => (isTR ? `${name} için hazırlanın.` : `Get ready for ${name}.`),
+  };
+};
+
+const getPrayerNamesByLanguage = (langSource = i18nInstance) => ({
+  fajr: langSource?.t?.('prayer.fajr') ?? 'Fajr',
+  sunrise: langSource?.t?.('prayer.sunrise') ?? 'Sunrise',
+  dhuhr: langSource?.t?.('prayer.dhuhr') ?? 'Dhuhr',
+  asr: langSource?.t?.('prayer.asr') ?? 'Asr',
+  maghrib: langSource?.t?.('prayer.maghrib') ?? 'Maghrib',
+  isha: langSource?.t?.('prayer.isha') ?? 'Isha',
+});
+
+const buildPrayerNotificationEntries = ({ coords, params, now, windowHours }) => {
+  if (!coords || !params) return [];
+  const current = now ?? new Date();
+  const windowEnd = new Date(current.getTime() + windowHours * 60 * 60 * 1000);
+  const entries = [];
+
+  for (let offset = 0; offset <= 2; offset += 1) {
+    const date = new Date(current);
+    date.setDate(date.getDate() + offset);
+    const times = new PrayerTimes(coords, date, params);
+
+    PRAYER_NOTIFICATION_KEYS.forEach((key) => {
+      const time = times[key];
+      if (!(time instanceof Date)) return;
+      if (time <= current || time > windowEnd) return;
+      entries.push({ key, time });
+    });
+  }
+
+  return entries.sort((a, b) => a.time - b.time);
+};
+
+const ensureAndroidNotificationChannels = async () => {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('ezan-channel', {
+      name: 'Ezan Vakti Bildirimleri',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'ogle.mp3',
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+    });
+  } catch (error) {
+    console.log('Özel ezan sesi kurulamadı, varsayılana dönülüyor', error);
+    await Notifications.setNotificationChannelAsync('ezan-channel', {
+      name: 'Ezan Vakti Bildirimleri',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'ogle.mp3',
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+    });
+  }
+
+  await Notifications.setNotificationChannelAsync('reminder-channel', {
+    name: 'Vakit Hatırlatıcıları',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: null,
+    vibrationPattern: [0, 150],
+    enableVibrate: true,
+  });
+};
+
+const schedulePrayerNotificationBatch = async ({
+  entries,
+  now,
+  notificationText,
+  prayerNames,
+}) => {
+  const current = now ?? new Date();
+  const buildDateTrigger = (date, channelId = 'ezan-channel') => ({
+    type: Notifications.SchedulableTriggerInputTypes.DATE,
+    date,
+    ...(Platform.OS === 'android' ? { channelId } : {}),
+  });
+
+  for (const { key, time } of entries) {
+    if (!time || !(time instanceof Date)) continue;
+    const prayerName = prayerNames?.[key] ?? key;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: notificationText.timeTitle(prayerName),
+        body: notificationText.timeBody(prayerName),
+        sound: Platform.OS === 'ios' ? NOTIFICATION_SOUND_IOS : null,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+      },
+      trigger: buildDateTrigger(time, 'ezan-channel'),
+    });
+
+    const reminderAt = new Date(time.getTime() - REMINDER_OFFSET_MS);
+    if (reminderAt > current) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: notificationText.tenMinTitle(prayerName),
+          body: notificationText.tenMinBody(prayerName),
+          sound: null,
+          priority: Notifications.AndroidNotificationPriority.DEFAULT,
+        },
+        trigger: buildDateTrigger(reminderAt, 'reminder-channel'),
+      });
+    }
+  }
+};
+
+TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
+  try {
+    const permission = await Notifications.getPermissionsAsync();
+    if (permission?.status !== 'granted') {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    const locationPermission = await Location.getForegroundPermissionsAsync();
+    if (locationPermission?.status !== 'granted') {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
+    const locationData = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+
+    const coords = new Coordinates(
+      locationData.coords.latitude,
+      locationData.coords.longitude
+    );
+    const params = CalculationMethod.Turkey();
+    const now = new Date();
+
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    await ensureAndroidNotificationChannels();
+
+    const entries = buildPrayerNotificationEntries({
+      coords,
+      params,
+      now,
+      windowHours: NOTIFICATION_WINDOW_HOURS,
+    });
+
+    const notificationText = buildNotificationTextByLanguage(i18nInstance.language);
+    const prayerNames = getPrayerNamesByLanguage(i18nInstance);
+
+    await schedulePrayerNotificationBatch({
+      entries,
+      now,
+      notificationText,
+      prayerNames,
+    });
+
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch (error) {
+    console.log('Background refresh failed', error);
+    return BackgroundFetch.BackgroundFetchResult.Failed;
+  }
+});
 
 // Bildirim Handler
 Notifications.setNotificationHandler({
@@ -1084,28 +1254,9 @@ export default function App() {
   }, [zikrLoaded]);
 
   const setupApp = async () => {
-    // 1. Bildirim İzni
-    await requestNotificationPermissions();
-    
-    // 2. Kanal Kurulumu (Android)
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('ezan-channel', {
-        name: 'Ezan Vakti Bildirimleri',
-        importance: Notifications.AndroidImportance.MAX,
-        sound: 'ogle.mp3', // app.json sound ile eşleşmeli
-        vibrationPattern: [0, 250, 250, 250],
-        enableVibrate: true,
-      });
-      await Notifications.setNotificationChannelAsync('reminder-channel', {
-        name: 'Vakit Hatırlatıcıları',
-        importance: Notifications.AndroidImportance.DEFAULT,
-        sound: null,
-        vibrationPattern: [0, 150],
-        enableVibrate: true,
-      });
-    }
-
-    // 3. Konumu Al
+    await ensureNotificationPermissions();
+    await ensureAndroidNotificationChannels();
+    await registerBackgroundRefreshTask();
     getLocation();
   };
 
@@ -1342,11 +1493,10 @@ export default function App() {
   }, [prayerTimes]);
 
   useEffect(() => {
-      if (!notificationsPrefLoaded) return;
-      if (!notificationsEnabled) return;
-      if (prayerTimes && location) {
-          schedulePrayerNotifications();
-      }
+    if (!notificationsPrefLoaded) return;
+    if (!notificationsEnabled) return;
+    if (!location) return;
+    schedulePrayerNotifications();
   }, [prayerTimes, location, notificationsEnabled, notificationsPrefLoaded]);
 
 
@@ -1482,12 +1632,12 @@ export default function App() {
       return;
     }
     try {
-      const triggerDate = new Date(Date.now() + 5000);
+      const triggerDate = new Date(Date.now() + 3 * 60 * 1000); // 3 dakika sonra
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'Test Bildirimi',
           body: 'Ezan sesi testi başlatılıyor.',
-          sound: NOTIFICATION_SOUND,
+          sound: Platform.OS === 'ios' ? NOTIFICATION_SOUND_IOS : null,
           priority: Notifications.AndroidNotificationPriority.MAX,
         },
         trigger: {
@@ -1496,7 +1646,7 @@ export default function App() {
           ...(Platform.OS === 'android' ? { channelId: 'ezan-channel' } : {}),
         },
       });
-      Alert.alert('Bilgi', '5 saniye içinde test bildirimi gelecek.');
+      Alert.alert('Bilgi', '3 dakika içinde test bildirimi gelecek.');
     } catch (error) {
       console.log('Test bildirimi hatası', error);
       Alert.alert('Hata', 'Test bildirimi planlanamadı.');
@@ -1521,77 +1671,106 @@ export default function App() {
   };
 
   // --- NOTIFICATIONS ---
-  const requestNotificationPermissions = async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
-    return status;
+  const registerBackgroundRefreshTask = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const status = await BackgroundFetch.getStatusAsync();
+      if (
+        (BackgroundFetch.BackgroundFetchStatus &&
+          (status === BackgroundFetch.BackgroundFetchStatus.Restricted ||
+            status === BackgroundFetch.BackgroundFetchStatus.Denied)) ||
+        (BackgroundFetch.Status &&
+          (status === BackgroundFetch.Status.Restricted ||
+            status === BackgroundFetch.Status.Denied))
+      ) {
+        return;
+      }
+
+      const alreadyRegistered = await TaskManager.isTaskRegisteredAsync(
+        BACKGROUND_TASK_NAME
+      );
+      if (!alreadyRegistered) {
+        await BackgroundFetch.registerTaskAsync(BACKGROUND_TASK_NAME, {
+          minimumInterval: BACKGROUND_FETCH_INTERVAL_HOURS * 60 * 60,
+          stopOnTerminate: false,
+          startOnBoot: true,
+        });
+      }
+    } catch (error) {
+      console.log('Background fetch kayıt edilemedi', error);
+    }
+  };
+
+  const ensureNotificationPermissions = async () => {
+    try {
+      const current = await Notifications.getPermissionsAsync();
+      let status = current?.status;
+
+      if (status !== 'granted') {
+        const requestResult = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowSound: true,
+            allowBadge: false,
+          },
+          android: {
+            allowAlert: true,
+            allowSound: true,
+          },
+        });
+        status = requestResult?.status;
+      }
+
+      if (Platform.OS === 'android') {
+        try {
+          const exactAlarm = await Notifications.requestPermissionsAsync({
+            android: { exactAlarm: true },
+          });
+          if (exactAlarm?.status === 'granted') {
+            status = 'granted';
+          }
+        } catch (error) {
+          console.log('Exact alarm izni alınamadı', error);
+        }
+      }
+
+      return status;
+    } catch (error) {
+      console.log('Bildirim izni alınamadı', error);
+      return null;
+    }
   };
 
   const schedulePrayerNotifications = async (forceEnabledValue = null) => {
     const isEnabled = forceEnabledValue ?? notificationsEnabled;
-    if (!prayerTimes || !isEnabled || !location?.coords) return;
+    if (!isEnabled || !location?.coords) return;
 
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    const now = new Date();
-    const buildDateTrigger = (date, channelId = 'ezan-channel') => ({
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date,
-      ...(Platform.OS === 'android' ? { channelId } : {}),
-    });
+    const permissionStatus = await ensureNotificationPermissions();
+    if (permissionStatus !== 'granted') return;
 
     const coords = new Coordinates(
       location.coords.latitude,
       location.coords.longitude
     );
     const params = CalculationMethod.Turkey();
+    const now = new Date();
 
-    const buildEntries = (times, skipPast) =>
-      PRAYER_NOTIFICATION_KEYS.map((key) => ({
-        key,
-        time: times[key],
-      })).filter(
-        ({ time }) =>
-          time instanceof Date && (!skipPast || time > now)
-      );
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    await ensureAndroidNotificationChannels();
 
-    const entries = [...buildEntries(prayerTimes, true)];
+    const entries = buildPrayerNotificationEntries({
+      coords,
+      params,
+      now,
+      windowHours: NOTIFICATION_WINDOW_HOURS,
+    });
 
-    // Ertesi günün vakitlerini de planla ki uygulama kapalı olsa bile sabah ezanı çalsın
-    try {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowTimes = new PrayerTimes(coords, tomorrow, params);
-      entries.push(...buildEntries(tomorrowTimes, false));
-    } catch (error) {
-      console.log('Yarın vakitleri hesaplanamadı', error);
-    }
-
-    for (const { key, time } of entries) {
-      if (!time || !(time instanceof Date)) continue;
-
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: notificationText.timeTitle(PRAYER_NAMES[key]),
-          body: notificationText.timeBody(PRAYER_NAMES[key]),
-          sound: NOTIFICATION_SOUND,
-          priority: Notifications.AndroidNotificationPriority.MAX,
-        },
-        trigger: buildDateTrigger(time, 'ezan-channel'),
-      });
-
-      const tenMinutesBefore = new Date(time.getTime() - 10 * 60 * 1000);
-      if (tenMinutesBefore > now) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: notificationText.tenMinTitle(PRAYER_NAMES[key]),
-            body: notificationText.tenMinBody(PRAYER_NAMES[key]),
-            sound: null,
-            priority: Notifications.AndroidNotificationPriority.DEFAULT,
-          },
-          trigger: buildDateTrigger(tenMinutesBefore, 'reminder-channel'),
-        });
-      }
-    }
+    await schedulePrayerNotificationBatch({
+      entries,
+      now,
+      notificationText,
+      prayerNames: PRAYER_NAMES,
+    });
   };
 
   // --- QIBLA ANIMATION ---
@@ -2263,9 +2442,27 @@ export default function App() {
       </ScrollView>
 
       <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 50 }}>
+        <TouchableOpacity
+          onPress={triggerTestEzanNotification}
+          style={{
+            backgroundColor: '#111827',
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Text style={{ color: '#F9FAFB', fontWeight: '600' }}>
+            {t('common.test') || 'Test Bildirimi (3 dk)'}
+          </Text>
+        </TouchableOpacity>
         <BannerAd
           unitId={adUnitId}
-          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          size={
+            Platform.OS === 'android'
+              ? BannerAdSize.ANCHORED_ADAPTIVE_BANNER
+              : BannerAdSize.ADAPTIVE_BANNER
+          }
           requestOptions={{
             requestNonPersonalizedAdsOnly: true,
           }}
