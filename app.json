@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vakit",
     "slug": "vakit-sade-ezan-saati",
-    "version": "1.0.9",
+    "version": "1.0.11",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.suatp.vakitezansaati",
-      "buildNumber": "11",
+      "buildNumber": "12",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "The app needs your location to accurately calculate prayer times and show the Qibla direction.",
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "versionCode": 11,
+      "versionCode": 12,
       "useNextNotificationsApi": true,
       "package": "com.suatp.vakitezansaati",
       "permissions": [
