@@ -9,13 +9,21 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
+# Native - Android (BU KISIM EKSİKTİ!)
+android/.gradle
+android/build
+android/app/build
+android/app/build/
+android/local.properties
 *.jks
-*.p8
+*.keystore
+
+# Native - iOS (BU KISIM EKSİKTİ!)
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+ios/.xcode.env.local
 *.p12
-*.key
 *.mobileprovision
 
 # Metro
@@ -35,5 +43,3 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
-
-# generated native folders (keep tracked for EAS builds)
