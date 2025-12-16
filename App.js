@@ -37,12 +37,11 @@ import { useTranslation } from 'react-i18next';
 import i18nInstance from './src/i18n/i18n';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
-const adUnitId = __DEV__ 
-  ? TestIds.BANNER 
-  : Platform.select({
-      ios: 'ca-app-pub-6300495112628329/8325709971',
-      android: 'ca-app-pub-6300495112628329/1128511738',
-    });
+const IOS_BANNER_IDS = [
+  'ca-app-pub-6300495112628329/3180298652',
+  'ca-app-pub-6300495112628329/8325709971',
+];
+const ANDROID_BANNER_ID = 'ca-app-pub-6300495112628329/1128511738';
 
 // const PRAYER_NAMES = {
 //   fajr: 'İmsak',
@@ -914,6 +913,19 @@ Notifications.setNotificationHandler({
 
 export default function App() {
   const { t, i18n } = useTranslation();
+  const [iosBannerIndex, setIosBannerIndex] = useState(() =>
+    Math.floor(Math.random() * IOS_BANNER_IDS.length)
+  );
+
+  const adUnitId = useMemo(() => {
+    if (__DEV__) return TestIds.BANNER;
+    const iosId = IOS_BANNER_IDS[iosBannerIndex] ?? IOS_BANNER_IDS[0];
+    return Platform.select({
+      ios: iosId,
+      android: ANDROID_BANNER_ID,
+      default: iosId,
+    });
+  }, [iosBannerIndex]);
 
   const PRAYER_NAMES = useMemo(() => ({
     fajr: t('prayer.fajr'),
@@ -2210,7 +2222,7 @@ export default function App() {
                 return (
                 <View key={goal.key} style={styles.habitCard}>
                     <View style={styles.habitHeader}>
-                      <View>
+                      <View style={styles.habitHeaderLeft}>
                         <Text style={styles.habitLabel}>{goal.label}</Text>
                         <Text style={styles.habitPeriod}>
                           {goal.periodLabel} • {value}/{goal.target} {goal.unit}
@@ -2385,7 +2397,7 @@ export default function App() {
                 <View style={styles.northMarker} />
                 {kaabaMetrics && (
                   <View style={styles.kaabaTipIcon}>
-                    <Ionicons name="cube" size={14} color="#B91C1C" />
+                    <Ionicons name="cube" size={16} color="#000000" />
                   </View>
                 )}
                 <Animated.View
@@ -2405,9 +2417,9 @@ export default function App() {
                 </Animated.View>
 
               </View>
-            </View>
+        </View>
 
-            <View style={styles.qiblaInfoRow}>
+        <View style={[styles.qiblaInfoRow, { marginTop: 32 }]}>
               <View style={styles.qiblaInfoCard}>
                 <Text style={styles.infoLabel}>{t('home.angle')}</Text>
                 <Text style={styles.infoValue}>{qiblaAngleDisplay}</Text>
@@ -2441,21 +2453,7 @@ export default function App() {
         </View>
       </ScrollView>
 
-      <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 50 }}>
-        <TouchableOpacity
-          onPress={triggerTestEzanNotification}
-          style={{
-            backgroundColor: '#111827',
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            borderRadius: 12,
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ color: '#F9FAFB', fontWeight: '600' }}>
-            {t('common.test') || 'Test Bildirimi (3 dk)'}
-          </Text>
-        </TouchableOpacity>
+      <View style={{ alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 50, marginTop: 8 }}>
         <BannerAd
           unitId={adUnitId}
           size={
@@ -2463,6 +2461,12 @@ export default function App() {
               ? BannerAdSize.ANCHORED_ADAPTIVE_BANNER
               : BannerAdSize.ADAPTIVE_BANNER
           }
+          onAdFailedToLoad={(error) => {
+            if (!__DEV__ && Platform.OS === 'ios' && IOS_BANNER_IDS.length > 1) {
+              setIosBannerIndex((prev) => (prev + 1) % IOS_BANNER_IDS.length);
+            }
+            console.log('Banner load failed', error);
+          }}
           requestOptions={{
             requestNonPersonalizedAdsOnly: true,
           }}
@@ -3209,21 +3213,30 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
+  habitHeaderLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
   habitLabel: {
     color: '#F8FAFC',
     fontSize: 18,
     fontWeight: '700',
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   habitPeriod: {
     color: 'rgba(248,250,252,0.65)',
     fontSize: 13,
     marginTop: 4,
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   habitChip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
+    alignSelf: 'flex-start',
   },
   habitChipText: {
     fontSize: 12,
@@ -3519,7 +3532,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   compassWrapper: {
-    marginTop: 24,
+    marginTop: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3547,7 +3560,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   compassCircleAligned: {
     backgroundColor: '#052e23',
@@ -3585,9 +3598,9 @@ const styles = StyleSheet.create({
   northMarker: {
     position: 'absolute',
     width: 6,
-    height: 30,
+    height: 0,
     borderRadius: 3,
-    backgroundColor: '#F87171',
+    backgroundColor: 'transparent',
     top: 12,
   },
   centerDot: {
@@ -3636,17 +3649,27 @@ const styles = StyleSheet.create({
   },
   kaabaTipIcon: {
     position: 'absolute',
-    top: 18,
+    top: -25,
     alignSelf: 'center',
-    backgroundColor: '#FEF9C3',
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 0.5,
-    borderColor: '#0f172a',
+    
+    // RENK AYARLARI (KABE TEMASI)
+    backgroundColor: '#FCD34D', // Altın Sarısı (Kabe'nin işlemeleri ve kapısı hissi için)
+    borderColor: '#FFFFFF',     // Dışına beyaz ince bir kontür (temiz görünüm için)
+    borderWidth: 2,             // Çerçeve kalınlığı
+    
+    // ŞEKİL AYARLARI
+    borderRadius: 50,           // Tam yuvarlak olması için (Küpün etrafında bir daire)
+    width: 36,                  // Genişlik ve Yükseklik eşit olmalı ki tam daire olsun
+    height: 36,
+    justifyContent: 'center',   // İkonu tam ortaya hizalar
+    alignItems: 'center',       // İkonu tam ortaya hizalar
+    
+    // GÖLGE AYARLARI
     shadowColor: '#000',
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 6,               // Android için gölge
+    zIndex: 30,
   },
   qiblaNeedleWrapper: {
     position: 'absolute',
@@ -3672,7 +3695,7 @@ const styles = StyleSheet.create({
   },
   qiblaInfoRow: {
     flexDirection: 'row',
-    marginTop: 20,
+    marginTop: 28,
     justifyContent: 'space-between',
   },
   qiblaInfoCard: {
