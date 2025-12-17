@@ -1,0 +1,4 @@
+<resources>
+  <string name="NSLocationWhenInUseUsageDescription">"The app needs your location to accurately calculate prayer times and show the Qibla direction."</string>
+  <string name="NSLocationAlwaysAndWhenInUseUsageDescription">"The app needs your location to accurately calculate prayer times and show the Qibla direction."</string>
+</resources>

@@ -1,0 +1,4 @@
+<resources>
+  <string name="NSLocationWhenInUseUsageDescription">"Uygulama, namaz vakitlerini doğru hesaplamak ve Kıble yönünü göstermek için konumunuza ihtiyaç duyar."</string>
+  <string name="NSLocationAlwaysAndWhenInUseUsageDescription">"Uygulama, namaz vakitlerini doğru hesaplamak ve Kıble yönünü göstermek için konumunuza ihtiyaç duyar."</string>
+</resources>
